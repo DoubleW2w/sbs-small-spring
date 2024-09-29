@@ -137,3 +137,120 @@ public class SimpleBeanContainerImplTest {
 
 - `getBeanDefinition()` 交给 `DefaultListableBeanFactory` 来提供默认实现。
 - `createBean()` 交给 `AbstractAutowireCapableBeanFactory` 来提供默认实现。
+
+
+
+## Bean 实例化策略
+
+### S
+
+在 Bean 的实例化过程，我们是通过反射获取 **无参构造函数** 去创建出来的对象。
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202409292254095.png"/>
+
+但是当我们想要通过其他构造函数去实例化时，就会抛出异常
+
+```
+org.springframework.beans.factory.BeansException: Instantiation of bean failed
+
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:20)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:23)
+	at org.springframework.beans.factory.BeanDefinitionAndBeanDefinitionRegistryTest.test_BeanFactory(BeanDefinitionAndBeanDefinitionRegistryTest.java:24)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:566)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1541)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1541)
+Caused by: java.lang.NoSuchMethodException: org.springframework.beans.factory.HelloService.<init>()
+	at java.base/java.lang.Class.getConstructor0(Class.java:3349)
+	at java.base/java.lang.Class.getDeclaredConstructor(Class.java:2553)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:18)
+	... 5 more
+```
+
+
+
+### T
+
+完善含有构造函数的 Bean 对象的实例化策略
+
+- Java 自身的构造函数
+- 使用 Cglib 动态创建 Bean 对象
+
+针对bean的实例化，抽象出一个实例化策略的接口InstantiationStrategy，有两个实现类：
+
+- SimpleInstantiationStrategy，使用bean的构造函数来实例化
+- CglibSubclassingInstantiationStrategy，使用CGLIB动态生成子类
+
+### A
+
+```java
+public interface InstantiationStrategy {
+  /**
+   * 根据Bean定义来实例化Bean
+   *
+   * @param beanDefinition Bean定义
+   * @param beanName Bean名称
+   * @param ctor 构造函数
+   * @param args 构造函数参数
+   * @return Bean对象
+   * @throws BeansException 异常
+   */
+  Object instantiate(
+      BeanDefinition beanDefinition, String beanName, Constructor ctor, Object[] args)
+      throws BeansException;
+}
+```
+
+```java
+public class SimpleInstantiationStrategy implements InstantiationStrategy {
+
+  @Override
+  public Object instantiate(
+      BeanDefinition beanDefinition, String beanName, Constructor ctor, Object[] args)
+      throws BeansException {
+    if (beanDefinition == null) {
+      throw new BeansException("beanDefinition is not exist");
+    }
+    Class clazz = beanDefinition.getBeanClass();
+    try {
+      if (null != ctor) {
+        return clazz.getDeclaredConstructor(ctor.getParameterTypes()).newInstance(args);
+      } else {
+        return clazz.getDeclaredConstructor().newInstance();
+      }
+    } catch (NoSuchMethodException
+        | InstantiationException
+        | IllegalAccessException
+        | InvocationTargetException e) {
+      throw new BeansException("Failed to instantiate [" + clazz.getName() + "]", e);
+    }
+  }
+}
+```
+
+```java
+public class CglibSubclassingInstantiationStrategy implements InstantiationStrategy {
+  @Override
+  public Object instantiate(
+      BeanDefinition beanDefinition, String beanName, Constructor ctor, Object[] args)
+      throws BeansException {
+    Enhancer enhancer = new Enhancer();
+    enhancer.setSuperclass(beanDefinition.getBeanClass());
+    enhancer.setCallback(
+        new NoOp() {
+          @Override
+          public int hashCode() {
+            return super.hashCode();
+          }
+        });
+    // 无参
+    if (null == ctor) return enhancer.create();
+    // 有参
+    return enhancer.create(ctor.getParameterTypes(), args);
+  }
+}
+```
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-2-Bean%E7%9A%84%E5%AE%9E%E4%BE%8B%E5%8C%96%E7%AD%96%E7%95%A5-1-1.drawio.svg"/>
+
+### R
+
