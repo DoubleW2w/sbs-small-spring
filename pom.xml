@@ -17,6 +17,11 @@
     </properties>
 
     <dependencies>
+        <!-- <dependency> -->
+        <!--     <groupId>org.springframework</groupId> -->
+        <!--     <artifactId>spring-beans</artifactId> -->
+        <!--     <version>5.3.39</version> -->
+        <!-- </dependency> -->
         <!-- log -->
         <dependency>
             <groupId>ch.qos.logback</groupId>
