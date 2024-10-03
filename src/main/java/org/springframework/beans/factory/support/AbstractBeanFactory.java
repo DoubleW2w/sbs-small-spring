@@ -1,10 +1,12 @@
 package org.springframework.beans.factory.support;
 
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.beans.factory.BeansException;
 import org.springframework.beans.factory.config.BeanDefinition;
 
 /**
+ * Bean工厂的积累
+ *
  * @author: DoubleW2w
  * @date: 2024/9/29
  * @project: sbs-small-spring

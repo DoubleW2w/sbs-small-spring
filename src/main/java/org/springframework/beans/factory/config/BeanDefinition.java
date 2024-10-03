@@ -1,5 +1,9 @@
 package org.springframework.beans.factory.config;
 
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.beans.PropertyValues;
+
 /**
  * Bean定义
  *
@@ -9,17 +13,18 @@ package org.springframework.beans.factory.config;
  */
 public class BeanDefinition {
   /** bean的class类型 */
-  private Class beanClass;
+  @Setter @Getter private Class beanClass;
+
+  /** 属性值集合合 */
+  @Setter @Getter private PropertyValues propertyValues;
 
   public BeanDefinition(Class beanClass) {
     this.beanClass = beanClass;
+    this.propertyValues = new PropertyValues();
   }
 
-  public Class getBeanClass() {
-    return beanClass;
-  }
-
-  public void setBeanClass(Class beanClass) {
+  public BeanDefinition(Class beanClass, PropertyValues propertyValues) {
     this.beanClass = beanClass;
+    this.propertyValues = propertyValues != null ? propertyValues : new PropertyValues();
   }
 }

@@ -175,10 +175,10 @@ Caused by: java.lang.NoSuchMethodException: org.springframework.beans.factory.He
 - Java 自身的构造函数
 - 使用 Cglib 动态创建 Bean 对象
 
-针对bean的实例化，抽象出一个实例化策略的接口InstantiationStrategy，有两个实现类：
+针对 bean 的实例化，抽象出一个实例化策略的接口 InstantiationStrategy，有两个实现类：
 
-- SimpleInstantiationStrategy，使用bean的构造函数来实例化
-- CglibSubclassingInstantiationStrategy，使用CGLIB动态生成子类
+- SimpleInstantiationStrategy，使用 bean 的构造函数来实例化
+- CglibSubclassingInstantiationStrategy，使用 CGLIB 动态生成子类
 
 ### A
 
@@ -254,3 +254,88 @@ public class CglibSubclassingInstantiationStrategy implements InstantiationStrat
 
 ### R
 
+
+
+## 为 Bean 对象注入属性
+
+### S
+
+目前实现了无参构造、有参构造的实例化，但不能每次实例化 Bean，都要以构造函数的方式注入属性。
+
+对于属性的填充不只是 int、Long、String，还包括还没有实例化的对象属性，都需要在 Bean 创建时进行填充操作。
+
+### T
+
+通过将属性封装为 `PropertyValue` 类，增加针对 Bean 对象提供注入属性的方式。
+
+### A
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410031737160.png"/>
+
+```java
+public class PopulateBeanWithPropertyValuesTest {
+  @Test
+  public void test_BeanFactoryInstantiationStrategy() {
+    // 1.初始化 BeanFactory
+    DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+
+    // 2.注册 bean
+    beanFactory.registerBeanDefinition("worldService", new BeanDefinition(WorldService.class));
+
+    // 3. helloService 设置属性[name、worldService]
+    PropertyValues propertyValues = new PropertyValues();
+    propertyValues.addPropertyValue(
+        new PropertyValue("worldService", new BeanReference("worldService")));
+
+    // 4. 注册 bean
+    beanFactory.registerBeanDefinition(
+        "helloService", new BeanDefinition(HelloService.class, propertyValues));
+
+    // 5.获取 bean
+    HelloService userService = (HelloService) beanFactory.getBean("helloService","zhangsan");
+    userService.sayHello();
+    userService.sayWorld();
+  }
+}
+
+public class HelloService {
+
+  private String name;
+  @Setter private WorldService worldService;
+
+  public HelloService(String name) {
+    this.name = name;
+  }
+
+  public HelloService() {}
+
+  public String sayHello() {
+    System.out.println("name=" + name);
+    return "hello";
+  }
+
+  public void sayWorld() {
+    worldService.world();
+  }
+}
+
+public class WorldService {
+  private String id = "world";
+
+  public WorldService() {}
+
+  public WorldService(String id) {
+    this.id = id;
+  }
+
+  public String world() {
+    System.out.println(id);
+    return id;
+  }
+}
+```
+
+### R
+
+- 一开始是通过无参构造函数完成实例化Bean对象，后面增加了有参构造函数的方式，这也算是一种变相的注入属性。
+- 本节增加 Bean 属性的注入方式，通过反射的方式进行填充，不过这里使用的 hutool 的工具类来处理。

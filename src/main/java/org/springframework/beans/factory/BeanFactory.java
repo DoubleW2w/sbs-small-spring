@@ -1,5 +1,7 @@
 package org.springframework.beans.factory;
 
+import org.springframework.beans.BeansException;
+
 /**
  * bean工厂：负责注册bean和获取bean
  *
