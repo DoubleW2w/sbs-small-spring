@@ -31,4 +31,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
     beanDefinitionMap.put(beanName, beanDefinition);
   }
 
+  public boolean hasBeanDefinition(String beanName) {
+    return beanDefinitionMap.containsKey(beanName);
+  }
 }

@@ -1,5 +1,6 @@
 package org.springframework.beans.factory;
 
+import lombok.Getter;
 import lombok.Setter;
 
 /**
@@ -8,9 +9,8 @@ import lombok.Setter;
  * @project: sbs-small-spring
  */
 public class HelloService {
-
-  private String name;
-  @Setter private WorldService worldService;
+  @Getter @Setter private String name;
+  @Getter @Setter private WorldService worldService;
 
   public HelloService(String name) {
     this.name = name;
