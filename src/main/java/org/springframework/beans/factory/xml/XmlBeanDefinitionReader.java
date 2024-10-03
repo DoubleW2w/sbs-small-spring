@@ -1,33 +1,39 @@
-package org.springframework.beans.xml;
+package org.springframework.beans.factory.xml;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.core.util.XmlUtil;
+import java.io.IOException;
+import java.io.InputStream;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.PropertyValue;
+import org.springframework.beans.core.io.Resource;
+import org.springframework.beans.core.io.ResourceLoader;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanReference;
+import org.springframework.beans.factory.support.AbstractBeanDefinitionReader;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
-import java.io.InputStream;
-
 /**
+ * xml bean定义的解析方式
+ *
  * @author: DoubleW2w
  * @date: 2024/10/3
  * @project: sbs-small-spring
  */
-public class XmlBeanDefinitionReader {
+public class XmlBeanDefinitionReader extends AbstractBeanDefinitionReader {
 
-  private final DefaultListableBeanFactory defaultListableBeanFactory;
-
-  public XmlBeanDefinitionReader(DefaultListableBeanFactory defaultListableBeanFactory) {
-    this.defaultListableBeanFactory = defaultListableBeanFactory;
+  public XmlBeanDefinitionReader(BeanDefinitionRegistry registry) {
+    super(registry);
   }
 
-  public void doLoadBeanDefinitions(InputStream inputStream) throws Exception {
+  public XmlBeanDefinitionReader(BeanDefinitionRegistry registry, ResourceLoader resourceLoader) {
+    super(registry, resourceLoader);
+  }
+
+  protected void doLoadBeanDefinitions(InputStream inputStream) throws ClassNotFoundException {
     Document doc = XmlUtil.readXML(inputStream);
     Element root = doc.getDocumentElement();
     NodeList childNodes = root.getChildNodes();
@@ -70,12 +76,36 @@ public class XmlBeanDefinitionReader {
         beanDefinition.getPropertyValues().addPropertyValue(propertyValue);
       }
 
-      // 如果存在相同的bean定义，就抛出异常
-      if (defaultListableBeanFactory.hasBeanDefinition(beanName)) {
+      if (getRegistry().containsBeanDefinition(beanName)) {
         throw new BeansException("Duplicate beanName[" + beanName + "] is not allowed");
       }
       // 注册 BeanDefinition
-      defaultListableBeanFactory.registerBeanDefinition(beanName, beanDefinition);
+      getRegistry().registerBeanDefinition(beanName, beanDefinition);
     }
+  }
+
+  @Override
+  public void loadBeanDefinitions(Resource resource) throws BeansException {
+    try {
+      try (InputStream inputStream = resource.getInputStream()) {
+        doLoadBeanDefinitions(inputStream);
+      }
+    } catch (IOException | ClassNotFoundException e) {
+      throw new BeansException("IOException parsing XML document from " + resource, e);
+    }
+  }
+
+  @Override
+  public void loadBeanDefinitions(Resource... resources) throws BeansException {
+    for (Resource resource : resources) {
+      loadBeanDefinitions(resource);
+    }
+  }
+
+  @Override
+  public void loadBeanDefinitions(String location) throws BeansException {
+    ResourceLoader resourceLoader = getResourceLoader();
+    Resource resource = resourceLoader.getResource(location);
+    loadBeanDefinitions(resource);
   }
 }

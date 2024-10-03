@@ -3,7 +3,7 @@ package org.springframework.beans.factory;
 import cn.hutool.core.io.resource.ResourceUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
-import org.springframework.beans.xml.XmlBeanDefinitionReader;
+import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
 
 /**
  * @author: DoubleW2w
@@ -18,8 +18,7 @@ public class ResourceLoadRegistryBeanTest {
 
     // 2. 读取配置文件&注册Bean
     XmlBeanDefinitionReader reader = new XmlBeanDefinitionReader(beanFactory);
-    reader.doLoadBeanDefinitions(ResourceUtil.getStream("spring-config.xml"));
-
+    reader.loadBeanDefinitions("classpath:spring-config.xml");
     // 3. 获取Bean对象调用方法
     HelloService helloService = (HelloService) beanFactory.getBean("helloService");
     String result = helloService.sayHello();
