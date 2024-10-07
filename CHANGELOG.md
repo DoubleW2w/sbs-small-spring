@@ -467,7 +467,7 @@ public class ResourceLoadRegistryBeanTest {
 
 <img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410032016748.png"/>
 
-#### 参考Spring的实现
+#### 参考 Spring 的实现
 
 ```java
 public interface BeanDefinitionReader {
@@ -606,3 +606,247 @@ public class XmlBeanDefinitionReader extends AbstractBeanDefinitionReader {
 
 - 解析配置文件，注册 Bean 信息
 - 通过 Bean 工厂，获取 Bean，以及对应的调用方法。
+
+
+
+## BeanFactoryPostProcessor 和 BeanPostProcessor
+
+
+
+## 实现应用上下文
+
+### S
+
+已经实现了通过解析 XML 配置文件完成 Bean 对象的注册，调用。
+
+### T
+
+- 减少 `DefaultListableBeanFactory`，`XmlBeanDefinitionReader` 的直接使用，因为这些类是直接面向 Spring 内部的，而应用上下文 ApplicationContext 面向 spring 的使用者，应用场合使用 ApplicationContext
+  - `ApplicationContext` 是 Spring 的 **IoC 容器**，负责管理应用中的对象（也就是 Bean）。
+
+  - 负责依赖注入（Dependency Injection, DI）
+
+  - 支持事件模型（Event Publishing），它允许应用程序发布和监听事件。
+
+  - 提供了对国际化（i18n）的支持。
+
+  - 管理 Bean 的生命周期
+
+  - 资源加载
+
+- 增加用户对 Bean 从注册到实例化的自定义扩展机制：`BeanFactoryPostProcessor` 和 `BeanPostProcessor`
+
+- `BeanFactoryPostProcessor` ：允许在 Bean 对象注册后但未实例化之前，对 Bean 的定义信息 `BeanDefinition` 执行修改操作。
+
+- `BeanPostProcessor`： 是在 Bean 对象实例化之后修改 Bean 对象，也可以替换 Bean 对象。
+
+### A
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410070123682.png"/>
+
+在实例化 Bean 的前置和后置添加接口处理类，并交给用户进行自定义实现。
+
+#### 在使用上下文之前
+
+假设定义好的 `BeanFactoryPostProcessor` 和 `BeanPostProcessor` 如下
+
+```java
+public interface BeanFactoryPostProcessor {
+  /**
+   * 在所有BeanDefinition加载完成后，但在bean实例化之前，提供修改BeanDefinition属性值的机制
+   *
+   * @param beanFactory bean工厂
+   * @throws BeansException 异常
+   */
+  void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException;
+}
+
+
+public interface BeanPostProcessor {
+  /**
+   * 在bean执行初始化方法之前执行此方法
+   *
+   * @param bean
+   * @param beanName
+   * @return
+   * @throws BeansException
+   */
+  Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException;
+
+  /**
+   * 在bean执行初始化方法之后执行此方法
+   *
+   * @param bean
+   * @param beanName
+   * @return
+   * @throws BeansException
+   */
+  Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException;
+}
+```
+
+
+
+AutowireCapableBeanFactory 负责执行所有用户自定义的 BeanPostProcessors 的功能。
+
+```java
+public interface AutowireCapableBeanFactory extends BeanFactory {
+  /**
+   * 执行 BeanPostProcessors 的 postProcessBeforeInitialization 方法
+   *
+   * @param existingBean 存在的bean对象
+   * @param beanName bean名称
+   * @return bean对象
+   * @throws BeansException bean异常
+   */
+  Object applyBeanPostProcessorsBeforeInitialization(Object existingBean, String beanName)
+      throws BeansException;
+
+  /**
+   * 执行 BeanPostProcessors的 postProcessAfterInitialization 方法
+   *
+   * @param existingBean 存在的bean对象
+   * @param beanName bean名称
+   * @return bean对象
+   * @throws BeansException bean异常
+   */
+  Object applyBeanPostProcessorsAfterInitialization(Object existingBean, String beanName)
+      throws BeansException;
+}
+```
+
+ 
+
+那么测试类应该如下
+
+```java
+@Test
+public void test_BeanFactoryPostProcessorAndBeanPostProcessor() {
+  // 1.初始化 BeanFactory
+  DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+
+  // 2. 读取配置文件&注册Bean
+  XmlBeanDefinitionReader reader = new XmlBeanDefinitionReader(beanFactory);
+  reader.loadBeanDefinitions("classpath:spring-config.xml");
+
+  // 3. BeanDefinition 加载完成 & Bean实例化之前，修改 BeanDefinition 的属性值
+  MyBeanFactoryPostProcessor beanFactoryPostProcessor = new MyBeanFactoryPostProcessor();
+  beanFactoryPostProcessor.postProcessBeanFactory(beanFactory);
+
+  // 4. Bean实例化之后，修改 Bean 属性信息
+  MyBeanPostProcessor beanPostProcessor = new MyBeanPostProcessor();
+  beanFactory.addBeanPostProcessor(beanPostProcessor);
+
+  // 5. 获取Bean对象调用方法
+  HelloService helloService = beanFactory.getBean("helloService", HelloService.class);
+  String result = helloService.sayHello();
+  System.out.println("测试结果：" + result);
+}
+```
+
+从上面的测试类就可以知道，步骤就是通过 `DefaultListableBeanFactory` 来加载配置文件，在结合 `BeanPostFactoryProcessor` 和 `BeanPostProcessor` 的作用。
+
+因为没有上下文的连接作用，因此 `BeanPostFactoryProcessor` 和 `BeanPostProcessor` 的效果是通过硬编码的方式进行调用。
+
+而上下文就是将 1、2、3、4 整合起来的。
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- spring-config.xml -->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean id="worldService" class="org.springframework.beans.factory.WorldService">
+    </bean>
+
+    <bean id="helloService" class="org.springframework.beans.factory.HelloService">
+        <property name="worldService" ref="worldService"/>
+        <property name="name" value="lisi"/>
+    </bean>
+
+    <bean class="org.springframework.beans.factory.MyBeanPostProcessor"/>
+    <bean class="org.springframework.beans.factory.MyBeanFactoryPostProcessor"/>
+</beans>
+```
+
+#### 使用应用上下文
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410080136709.png"/>
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-5-%E5%AE%9E%E7%8E%B0%E5%BA%94%E7%94%A8%E4%B8%8A%E4%B8%8B%E6%96%87.drawio-1.svg"/>
+
+```java
+@Test
+public void test_ApplicationContext() {
+  // 1.初始化 BeanFactory
+  ClassPathXmlApplicationContext applicationContext =
+    new ClassPathXmlApplicationContext("classpath:spring-config.xml");
+
+  // 2. 获取Bean对象调用方法
+  HelloService helloService = applicationContext.getBean("helloService", HelloService.class);
+  String result = helloService.sayHello();
+  System.out.println("测试结果：" + result);
+}
+```
+
+本质上就是通过 `ClassPathXmlApplicationContext` 来去调用 `AbstractApplicationContext#refresh()` 来完成上下文的操作。
+
+```java
+public abstract class AbstractApplicationContext extends DefaultResourceLoader
+  implements ConfigurableApplicationContext { 
+  @Override
+  public void refresh() throws BeansException {
+    // 1. 创建 BeanFactory，并加载 BeanDefinition
+    refreshBeanFactory();
+
+    // 2. 获取 BeanFactory
+    ConfigurableListableBeanFactory beanFactory = getBeanFactory();
+
+    // 3. 在 Bean 实例化之前，执行 BeanFactoryPostProcessor (Invoke factory processors registered as beans in
+    // the context.)
+    invokeBeanFactoryPostProcessors(beanFactory);
+
+    // 4. BeanPostProcessor 需要提前于其他 Bean 对象实例化之前执行注册操作
+    registerBeanPostProcessors(beanFactory);
+
+    // 5. 提前实例化单例Bean对象
+    beanFactory.preInstantiateSingletons();
+  }
+  // 省略其他....
+}
+```
+
+```java
+// 1. 创建 BeanFactory，并加载 BeanDefinition
+refreshBeanFactory();
+
+// 等价于
+DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+loadBeanDefinitions(beanFactory);
+
+
+// 3. 在 Bean 实例化之前，执行 BeanFactoryPostProcessor (Invoke factory processors registered as beans in
+// the context.)
+invokeBeanFactoryPostProcessors(beanFactory);
+
+// 等价于
+MyBeanFactoryPostProcessor beanFactoryPostProcessor = new MyBeanFactoryPostProcessor();
+beanFactoryPostProcessor.postProcessBeanFactory(beanFactory);
+
+// 4. BeanPostProcessor 需要提前于其他 Bean 对象实例化之前执行注册操作
+registerBeanPostProcessors(beanFactory);
+
+//等价于
+MyBeanPostProcessor beanPostProcessor = new MyBeanPostProcessor();
+beanFactory.addBeanPostProcessor(beanPostProcessor);
+```
+
+### R
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-5-%E5%AE%9E%E7%8E%B0%E5%BA%94%E7%94%A8%E4%B8%8A%E4%B8%8B%E6%96%87.drawio-2.png"/>
+
+很多抽象类都是通过继承的机制，来增加自己的职责，直到 `ClassPathXmlApplicationContext` 变成一个很完善的类，用户可以直接进行使用来进行测试。
+
+`AbstractApplicationContext#refresh()` 方法本质上就是一个「模板方法」的设计模式。

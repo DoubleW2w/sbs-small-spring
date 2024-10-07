@@ -12,6 +12,7 @@ import org.springframework.beans.core.io.ResourceLoader;
  * @project: sbs-small-spring
  */
 public interface BeanDefinitionReader {
+
   BeanDefinitionRegistry getRegistry();
 
   ResourceLoader getResourceLoader();
@@ -21,4 +22,6 @@ public interface BeanDefinitionReader {
   void loadBeanDefinitions(Resource... resources) throws BeansException;
 
   void loadBeanDefinitions(String location) throws BeansException;
+
+  void loadBeanDefinitions(String... locations) throws BeansException;
 }

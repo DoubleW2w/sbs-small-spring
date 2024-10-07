@@ -17,7 +17,7 @@ import java.util.Map;
 public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFactory
     implements BeanDefinitionRegistry, ConfigurableListableBeanFactory {
 
-  private final Map<String, BeanDefinition> beanDefinitionMap = new HashMap<>();
+  private Map<String, BeanDefinition> beanDefinitionMap = new HashMap<>();
 
   @Override
   public BeanDefinition getBeanDefinition(String beanName) {
@@ -25,6 +25,16 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
     if (beanDefinition == null)
       throw new BeansException("No bean named '" + beanName + "' is defined");
     return beanDefinition;
+  }
+
+  @Override
+  public void preInstantiateSingletons() throws BeansException {
+    beanDefinitionMap.keySet().forEach(this::getBean);
+  }
+
+  @Override
+  public void registerBeanDefinition(String beanName, BeanDefinition beanDefinition) {
+    beanDefinitionMap.put(beanName, beanDefinition);
   }
 
   @Override
@@ -48,10 +58,5 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
   @Override
   public String[] getBeanDefinitionNames() {
     return beanDefinitionMap.keySet().toArray(new String[0]);
-  }
-
-  @Override
-  public void registerBeanDefinition(String beanName, BeanDefinition beanDefinition) {
-    beanDefinitionMap.put(beanName, beanDefinition);
   }
 }

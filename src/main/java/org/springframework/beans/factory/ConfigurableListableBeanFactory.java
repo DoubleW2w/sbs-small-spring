@@ -21,4 +21,6 @@ public interface ConfigurableListableBeanFactory
    * @throws BeansException 如果找不到BeanDefintion
    */
   BeanDefinition getBeanDefinition(String beanName) throws BeansException;
+
+  void preInstantiateSingletons() throws BeansException;
 }

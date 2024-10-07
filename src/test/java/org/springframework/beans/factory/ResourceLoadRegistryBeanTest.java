@@ -1,6 +1,5 @@
 package org.springframework.beans.factory;
 
-import cn.hutool.core.io.resource.ResourceUtil;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;

@@ -12,4 +12,7 @@
         <property name="worldService" ref="worldService"/>
         <property name="name" value="lisi"/>
     </bean>
+
+    <bean class="org.springframework.beans.factory.MyBeanPostProcessor"/>
+    <bean class="org.springframework.beans.factory.MyBeanFactoryPostProcessor"/>
 </beans>
