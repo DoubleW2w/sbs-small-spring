@@ -41,6 +41,16 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
     beanFactory.preInstantiateSingletons();
   }
 
+  @Override
+  public void registerShutdownHook() {
+    Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+  }
+
+  @Override
+  public void close() {
+    getBeanFactory().destroySingletons();
+  }
+
   /**
    * 创建 BeanFactory，并加载 BeanDefinition
    *

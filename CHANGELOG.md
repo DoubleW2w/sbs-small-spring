@@ -850,3 +850,235 @@ beanFactory.addBeanPostProcessor(beanPostProcessor);
 很多抽象类都是通过继承的机制，来增加自己的职责，直到 `ClassPathXmlApplicationContext` 变成一个很完善的类，用户可以直接进行使用来进行测试。
 
 `AbstractApplicationContext#refresh()` 方法本质上就是一个「模板方法」的设计模式。
+
+
+
+## 初始化和销毁方法
+
+### S
+
+为了给 Bean 提供更全面的生命周期管理，希望可以在 Bean 初始化过程中，执行一些别的操作。比如预加载数据或者在程序关闭时销毁资源等。
+
+### T
+
+在 XML 配置文件中配置 **初始化方法 init-method** 和 **销毁方法 destroy-method** 。
+
+- `init-method` 在 Bean 实例化后，并且所有的属性都已经设置完成时被调用。这个阶段通常发生在以下步骤之后：
+  - **Bean 实例化**：Spring 容器根据配置创建 Bean 实例。
+  - **属性赋值**：Spring 容器将配置中定义的属性注入到 Bean 中。
+  - **Bean 后处理**：如果有 `BeanPostProcessor`，它们会在此阶段执行。
+
+- `destroy-method` 在 Bean 被销毁之前调用。
+  - **容器关闭**：当 Spring 容器被关闭时
+  - **单例 Bean 销毁**：对于单例 Bean，在容器关闭时执行销毁方法。
+
+
+### A
+
+在 spring.xml 配置中添加 `init-method、destroy-method` 两个注解
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- spring-config.xml -->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+  <bean id="worldService" class="org.springframework.beans.factory.WorldService"           init-method="initDataMethod"
+        destroy-method="destroyDataMethod">
+  </bean>
+
+  <bean id="helloService" class="org.springframework.beans.factory.HelloService">
+    <property name="worldService" ref="worldService"/>
+    <property name="name" value="lisi"/>
+  </bean>
+</beans>
+```
+
+在配置文件加载过程中，会将配置统一加载到 BeanDefinition 的属性中，这样就可以通过 **反射** 的方式来调用方法信息。如果是以接口实现的方式，那么直接通过 Bean 对象调用对应接口的方法接口，即 `((InitializingBean) bean).afterPropertiesSet()`。
+
+注册销毁方法的信息到 `DefaultSingletonBeanRegistry` 类中的 disposableBeans 属性里，而关于销毁方法需要在虚拟机执行关闭之前进行操作，所以这里需要用到一个注册钩子的操作，比如 `Runtime.getRuntime().addShutdownHook(new Thread(() -> System.out.println("close！")));`。
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410081112729.png"/>
+
+
+
+定义好「初始化接口」和「销毁接口」
+
+```java
+public interface DisposableBean {
+  /**
+   * 销毁方法
+   * @throws Exception
+   */
+  void destroy() throws Exception;
+}
+
+```
+
+```java
+public interface InitializingBean {
+  /**
+   * Bean 处理了属性填充后调用
+   *
+   * @throws Exception
+   */
+  void afterPropertiesSet() throws Exception;
+}
+```
+
+
+
+定义一个「销毁适配器」，目的是适配反射调用和接口直接调用的方法，本质上初始化也是如此，不过初始化方法是在内部的过程中，也是可以提取出一个适配器出来。
+
+```java
+public class DisposableBeanAdapter implements DisposableBean {
+  /** bean对象 */
+  private final Object bean;
+
+  /** bean名称 */
+  private final String beanName;
+
+  /** 销毁方法 */
+  private String destroyMethodName;
+
+  public DisposableBeanAdapter(Object bean, String beanName, BeanDefinition beanDefinition) {
+    this.bean = bean;
+    this.beanName = beanName;
+    this.destroyMethodName = beanDefinition.getDestroyMethodName();
+  }
+
+  @Override
+  public void destroy() throws Exception {
+    // 1. 实现接口 DisposableBean
+    if (bean instanceof DisposableBean) {
+      ((DisposableBean) bean).destroy();
+    }
+
+    // 2. 注解配置 destroy-method {判断是为了避免二次执行销毁}
+    if (StrUtil.isNotEmpty(destroyMethodName)
+        && !(bean instanceof DisposableBean && "destroy".equals(this.destroyMethodName))) {
+      Method destroyMethod = bean.getClass().getMethod(destroyMethodName);
+      if (null == destroyMethod) {
+        throw new BeansException(
+            "Couldn't find a destroy method named '"
+                + destroyMethodName
+                + "' on bean with name '"
+                + beanName
+                + "'");
+      }
+      destroyMethod.invoke(bean);
+    }
+  }
+}
+```
+
+
+
+
+
+```java
+//AbstractAutowireCapableBeanFactory 
+private void invokeInitMethods(String beanName, Object bean, BeanDefinition beanDefinition)
+  throws Exception {
+  // 1. 实现接口 InitializingBean
+  if (bean instanceof InitializingBean) {
+    ((InitializingBean) bean).afterPropertiesSet();
+  }
+
+  // 2. 注解配置 init-method {判断是为了避免二次执行初始化}
+  String initMethodName = beanDefinition.getInitMethodName();
+  if (StrUtil.isNotEmpty(initMethodName) && !(bean instanceof InitializingBean)) {
+    Method initMethod = beanDefinition.getBeanClass().getMethod(initMethodName);
+    if (null == initMethod) {
+      throw new BeansException(
+        "Could not find an init method named '"
+        + initMethodName
+        + "' on bean with name '"
+        + beanName
+        + "'");
+    }
+    initMethod.invoke(bean);
+  }
+}
+```
+
+真正使用的地方还是在 `createBean` 方法中，在 **创建 Bean** 的时候，注册销毁方法信息和初始化方法信息。
+
+```java
+////AbstractAutowireCapableBeanFactory
+protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
+      throws BeansException {
+    Object bean = null;
+    try {
+      bean = createBeanInstance(beanDefinition, beanName, args);
+      // 给 Bean 填充属性
+      applyPropertyValues(beanName, bean, beanDefinition);
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+
+    // 注册实现了 DisposableBean 接口的 Bean 对象
+    registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+
+    registerSingleton(beanName, bean);
+    return bean;
+  }
+```
+
+```java
+  @Test
+  public void test_ApplicationContext() {
+    // 1.初始化 BeanFactory
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-config-init-method-destroy-method.xml");
+    applicationContext.registerShutdownHook();
+
+    // 2. 获取Bean对象调用方法
+    HelloService helloService = applicationContext.getBean("helloService", HelloService.class);
+    String result = helloService.sayHello();
+    System.out.println("测试结果：" + result);
+  }
+```
+
+`applicationContext.registerShutdownHook();` 是用到了注册钩子的操作，即把 bean 工厂的 close 做了一个钩子，当容器关闭的时候，就会触发，从而完成销毁单例 bean 的操作。
+
+```java
+//AbstractApplicationContext
+public void registerShutdownHook() {
+  Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+}
+
+public void close() {
+  getBeanFactory().destroySingletons();
+}
+```
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410081228249.png"/>
+
+<p style="text-align:center"> 图片来自：小傅哥 </p>
+
+### R
+
+`AbstractAutowireCapableBeanFactory` 完成初始方法
+
+`AbstractApplicationContext` 处理销毁动作
+
+各种 BeanFacotry 的 UML 类图关系有点凌乱，需要整理，主要弄清楚它们各自的职责比较重要。
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-6-%E5%88%9D%E5%A7%8B%E5%8C%96%E6%96%B9%E6%B3%95%E5%92%8C%E9%94%80%E6%AF%81%E6%96%B9%E6%B3%95.drawio-2.png"/>
+
+- **BeanFacotry**：最顶层的 bean 工厂接口，提供了获取 Bean 对象的能力
+- **HierarchicalBeanFactory**：扩展了「层次化」的 Bean 工厂结构能力，比如父子级
+- **AutowireCapableBeanFactory**：扩展了「自动装配」和「创建 Bean」，还有「BeanPostProcessor 支持」的能力
+- **ListableBeanFactory**：提供查询和列表功能
+- **ConfigurableBeanFactory**：提供配置和管理 Bean 的能力，比如添加 BeanPostProcessor 的 bean 对象
+- **ConfigurableListableBeanFactory**：是整合 `ListableBeanFactory` 和 `ConfigurableBeanFactory` 的能力
+- **AbstractBeanFactory**：是 `BeanFactory` 的抽象类，供了一些基本的功能和方法，以支持具体的 BeanFactory 实现
+- **AbstractAutowireCapableBeanFactory**： 扩展了 `AbstractBeanFactory` 类，并实现了 `AutowireCapableBeanFactory` 接口，提供自动装配的能力和相关的管理功能
+- **DefaultListableBeanFactory**：是面向 Spring 内部使用的，功能很完善，Bean 的定义和注册，实例化，查询 Bean
+
+总之，一般都是通过定义顶层接口，然后定义抽象类实现接口，提供基础的功能或者模板形式，最后使用的是一个默认实现类。

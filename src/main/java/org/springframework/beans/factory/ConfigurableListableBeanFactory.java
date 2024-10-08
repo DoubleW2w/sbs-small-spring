@@ -23,4 +23,7 @@ public interface ConfigurableListableBeanFactory
   BeanDefinition getBeanDefinition(String beanName) throws BeansException;
 
   void preInstantiateSingletons() throws BeansException;
+
+  /** 接口实现方式：销毁单例对象 */
+  void destroySingletons();
 }

@@ -18,6 +18,12 @@ public class BeanDefinition {
   /** 属性值集合合 */
   @Setter @Getter private PropertyValues propertyValues;
 
+  /** 初始化方法 */
+  @Setter @Getter private String initMethodName;
+
+  /** 销毁方法 */
+  @Setter @Getter private String destroyMethodName;
+
   public BeanDefinition(Class beanClass) {
     this.beanClass = beanClass;
     this.propertyValues = new PropertyValues();
