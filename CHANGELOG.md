@@ -1044,7 +1044,7 @@ protected Object createBean(String beanName, BeanDefinition beanDefinition, Obje
   }
 ```
 
-`applicationContext.registerShutdownHook();` 是用到了注册钩子的操作，即把 bean 工厂的 close 做了一个钩子，当容器关闭的时候，就会触发，从而完成销毁单例 bean 的操作。
+为了确保销毁方法在虚拟机关闭之前执行，向虚拟机中注册一个钩子方法，查看`AbstractApplicationContext#registerShutdownHook`（非web应用需要手动调用该方法）。当然也可以手动调用`ApplicationContext#close` 方法关闭容器。
 
 ```java
 //AbstractApplicationContext
@@ -1060,6 +1060,14 @@ public void close() {
 <img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410081228249.png"/>
 
 <p style="text-align:center"> 图片来自：小傅哥 </p>
+
+
+
+bean 的生命周期如下：
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410081339508.png"/>
+
+<p style="text-align:center">图片来自：DerekYRC/mini-spring</p>
 
 ### R
 
