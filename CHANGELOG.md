@@ -1044,7 +1044,7 @@ protected Object createBean(String beanName, BeanDefinition beanDefinition, Obje
   }
 ```
 
-为了确保销毁方法在虚拟机关闭之前执行，向虚拟机中注册一个钩子方法，查看`AbstractApplicationContext#registerShutdownHook`（非web应用需要手动调用该方法）。当然也可以手动调用`ApplicationContext#close` 方法关闭容器。
+为了确保销毁方法在虚拟机关闭之前执行，向虚拟机中注册一个钩子方法，查看 `AbstractApplicationContext#registerShutdownHook`（非 web 应用需要手动调用该方法）。当然也可以手动调用 `ApplicationContext#close` 方法关闭容器。
 
 ```java
 //AbstractApplicationContext
@@ -1067,7 +1067,7 @@ bean 的生命周期如下：
 
 <img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202410081339508.png"/>
 
-<p style="text-align:center">图片来自：DerekYRC/mini-spring</p>
+<p style="text-align:center"> 图片来自：DerekYRC/mini-spring </p>
 
 ### R
 
@@ -1090,3 +1090,194 @@ bean 的生命周期如下：
 - **DefaultListableBeanFactory**：是面向 Spring 内部使用的，功能很完善，Bean 的定义和注册，实例化，查询 Bean
 
 总之，一般都是通过定义顶层接口，然后定义抽象类实现接口，提供基础的功能或者模板形式，最后使用的是一个默认实现类。
+
+## Aware 接口感知容器对象
+
+### S
+
+目前的功能实现有 Bean 对象的定义和注册、BeanFactoryPostProcessor、BeanPostProcessor、InitializingBean、DisposableBean、以及在 XML 新增的一些配置处理，初始化方法和销毁方法等。
+
+但如果我们想获得 Spring 框架提供的 BeanFactory、ApplicationContext、BeanClassLoader 等这些能力做一些扩展框架的使用时该怎么操作呢？
+
+### T
+
+通过 `Aware` 接口来标识这是一个感知容器，具体的子类定义和实现能感知容器中的相关对象，用于让 Spring 容器中的 Bean 获取某些特定的上下文信息或资源。
+
+- 以什么方式去获取。
+- `Aware` 的内容如何在 Spring 的管理中承接。
+
+### A
+
+#### 接口定义
+
+```java
+public interface Aware {}
+
+
+public interface ApplicationContextAware extends Aware {
+  void setApplicationContext(ApplicationContext applicationContext) throws BeansException;
+}
+
+public interface BeanClassLoaderAware extends Aware {
+  void setBeanClassLoader(ClassLoader classLoader);
+}
+
+public interface BeanFactoryAware extends Aware {
+  void setBeanFactory(BeanFactory beanFactory) throws BeansException;
+}
+
+public interface BeanNameAware extends Aware {
+  void setBeanName(String name);
+}
+```
+
+
+
+#### ApplicationContextAware处理
+
+`refresh()` 方法就是Spring容器的模板操作过程，由于 ApplicationContext 的获取并不能直接在创建 Bean 时候就可以拿到，所以添加 `ApplicationContextAwareProcessor` 的操作，让继承自 `ApplicationContextAware` 的 Bean 对象都能感知所属的 `ApplicationContext`，
+
+```java
+public abstract class AbstractApplicationContext extends DefaultResourceLoader
+  implements ConfigurableApplicationContext {  
+  public void refresh() throws BeansException {
+    // 1. 创建 BeanFactory，并加载 BeanDefinition
+    refreshBeanFactory();
+
+    // 2. 获取 BeanFactory
+    ConfigurableListableBeanFactory beanFactory = getBeanFactory();
+
+    // 添加 ApplicationContextAwareProcessor，让继承自ApplicationContextAware的bean能感知bean
+    beanFactory.addBeanPostProcessor(new ApplicationContextAwareProcessor(this));
+
+    // 3. 在 Bean 实例化之前，执行 BeanFactoryPostProcessor (Invoke factory processors registered as beans in
+    // the context.)
+    invokeBeanFactoryPostProcessors(beanFactory);
+
+    // 4. BeanPostProcessor 需要提前于其他 Bean 对象实例化之前执行注册操作
+    registerBeanPostProcessors(beanFactory);
+
+    // 5. 提前实例化单例Bean对象
+    beanFactory.preInstantiateSingletons();
+  }
+}
+```
+
+#### 感知调用操作
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
+    implements AutowireCapableBeanFactory {
+private Object initializeBean(String beanName, Object bean, BeanDefinition beanDefinition) {
+    // 感知beanFactory
+    // invokeAwareMethods
+    if (bean instanceof Aware) {
+      if (bean instanceof BeanFactoryAware) {
+        ((BeanFactoryAware) bean).setBeanFactory(this);
+      }
+      if (bean instanceof BeanClassLoaderAware) {
+        ((BeanClassLoaderAware) bean).setBeanClassLoader(getBeanClassLoader());
+      }
+      if (bean instanceof BeanNameAware) {
+        ((BeanNameAware) bean).setBeanName(beanName);
+      }
+    }
+
+    // 1. 执行 BeanPostProcessor Before 处理
+    Object wrappedBean = applyBeanPostProcessorsBeforeInitialization(bean, beanName);
+
+    // 待完成内容：invokeInitMethods(beanName, wrappedBean, beanDefinition);
+    try {
+      invokeInitMethods(beanName, wrappedBean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Invocation of init method of bean[" + beanName + "] failed", e);
+    }
+
+    // 2. 执行 BeanPostProcessor After 处理
+    wrappedBean = applyBeanPostProcessorsAfterInitialization(wrappedBean, beanName);
+    return wrappedBean;
+  }
+}
+```
+
+
+
+#### 目前流程图
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-7-Aware%E6%84%9F%E7%9F%A5%E5%AE%B9%E5%99%A8%E5%AF%B9%E8%B1%A1-1.png"/>
+
+#### 测试
+
+```java
+public class AwareInterfaceTest {
+  @Test
+  public void test() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+      new ClassPathXmlApplicationContext("classpath:spring-config-aware-interface.xml");
+    HelloWorldService helloService = applicationContext.getBean("helloWorldService", HelloWorldService.class);
+    assertThat(helloService.getApplicationContext()).isNotNull();
+    assertThat(helloService.getBeanFactory()).isNotNull();
+  }
+}
+
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- spring-config.xml -->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                           http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+  <bean id="helloWorldService" class="org.springframework.beans.factory.HelloWorldService">
+  </bean>
+</beans>
+```
+
+```java
+public class HelloWorldService
+  implements BeanNameAware, BeanClassLoaderAware, ApplicationContextAware, BeanFactoryAware {
+
+  private ApplicationContext applicationContext;
+
+  private BeanFactory beanFactory;
+
+  public String sayHelloWorld() {
+    System.out.println("hello world");
+    return "hello world";
+  }
+
+  @Override
+  public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+    this.beanFactory = beanFactory;
+  }
+
+  @Override
+  public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+    this.applicationContext = applicationContext;
+  }
+
+  public ApplicationContext getApplicationContext() {
+    return applicationContext;
+  }
+
+  public BeanFactory getBeanFactory() {
+    return beanFactory;
+  }
+
+  @Override
+  public void setBeanClassLoader(ClassLoader classLoader) {
+    System.out.println("ClassLoader：" + classLoader);
+  }
+
+  @Override
+  public void setBeanName(String name) {
+    System.out.println("Bean Name is：" + name);
+  }
+}
+```
+
+### R
+
+Bean 的生命周期简单来说只有四步：实例化-填充属性-使用-销毁。本章节主要实现 Aware 的感知接口的四个继承接口 BeanNameAware, BeanClassLoaderAware, ApplicationContextAware, BeanFactoryAware。
