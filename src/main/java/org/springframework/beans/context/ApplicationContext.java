@@ -1,5 +1,7 @@
 package org.springframework.beans.context;
 
+import org.springframework.beans.core.io.ResourceLoader;
+import org.springframework.beans.factory.HierarchicalBeanFactory;
 import org.springframework.beans.factory.ListableBeanFactory;
 
 /**
@@ -9,4 +11,5 @@ import org.springframework.beans.factory.ListableBeanFactory;
  * @date: 2024/10/8
  * @project: sbs-small-spring
  */
-public interface ApplicationContext extends ListableBeanFactory {}
+public interface ApplicationContext extends ListableBeanFactory, HierarchicalBeanFactory, ResourceLoader, ApplicationEventPublisher  {
+}

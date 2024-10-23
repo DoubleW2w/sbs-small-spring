@@ -1370,7 +1370,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 }
 ```
 
-<p></p>
+<p> </p>
 
 在加载 BeanDefinition 的方法中也添加了对 `scope` 属性的解析
 
@@ -1410,7 +1410,7 @@ public class XmlBeanDefinitionReader extends AbstractBeanDefinitionReader {
 
 ### R
 
-对象作用域简单分为 `singleton` 和 `prototype`，单例的情况下，会从缓存中查看bean对象是否已经生成过，否则调用生成方法。原型情况下，不会做判断，而是每次都会调用生成方法。
+对象作用域简单分为 `singleton` 和 `prototype`，单例的情况下，会从缓存中查看 bean 对象是否已经生成过，否则调用生成方法。原型情况下，不会做判断，而是每次都会调用生成方法。
 
 
 
@@ -1431,3 +1431,217 @@ public interface FactoryBean<T> {
 1. 创建对象：实现这个接口的类需要实现 getObject() 方法，该方法返回所需对象的实例。这个创建过程中，用户可以控制创建逻辑等。
 2. 提供对象的类型信息：getObjectType() 方法返回创建的对象的类型。
 3. 单例和原型的判断支持：isSingleton() 方法返回一个布尔值，指示返回的对象是单例还是原型。
+
+
+
+## 容器事件和事件监听器
+
+### S
+
+Spring 的事件功能是基于观察者模式——**当一个对象的状态发生改变时，所有依赖于它的对象都得到通知并被自动更新。**
+
+在 Event 事件功能中，可以提供 **事件的定义**、**事件的发布**、**事件的监听** 来完成一些自定义的动作。
+
+### T
+
+本章节目标是 **实现事件功能**
+
+- 初始化
+- 定义出事件类、监听类、发布类
+- 事件监听
+- 事件发布
+- 广播器——接收到事件推送时进行分析处理符合监听事件接受者感兴趣的事件，也就是使用 isAssignableFrom 进行判断。
+
+### A
+
+```java
+public abstract class ApplicationEvent extends EventObject {
+
+  /**
+   * Constructs a prototypical Event.
+   *
+   * @param source the object on which the Event initially occurred
+   * @throws IllegalArgumentException if source is null
+   */
+  public ApplicationEvent(Object source) {
+    super(source);
+  }
+}
+
+public class ApplicationContextEvent extends ApplicationEvent {
+
+  /**
+   * Constructs a prototypical Event.
+   *
+   * @param source the object on which the Event initially occurred
+   * @throws IllegalArgumentException if source is null
+   */
+  public ApplicationContextEvent(Object source) {
+    super(source);
+  }
+
+  /** Get the <code>ApplicationContext</code> that the event was raised for. */
+  public final ApplicationContext getApplicationContext() {
+    return (ApplicationContext) getSource();
+  }
+}
+
+public class ContextClosedEvent extends ApplicationContextEvent {
+  /**
+   * Constructs a prototypical Event.
+   *
+   * @param source the object on which the Event initially occurred
+   * @throws IllegalArgumentException if source is null
+   */
+  public ContextClosedEvent(Object source) {
+    super(source);
+  }
+}
+
+public class ContextRefreshedEvent extends ApplicationContextEvent {
+  /**
+   * Constructs a prototypical Event.
+   *
+   * @param source the object on which the Event initially occurred
+   * @throws IllegalArgumentException if source is null
+   */
+  public ContextRefreshedEvent(Object source) {
+    super(source);
+  }
+}
+```
+
+- ApplicationEvent 继承 EventObject 以后就具备了事件功能，所有的事件定义都要继承 ApplicationEvent
+- ApplicationContextEvent 是应用上下文事件，是事件类的一个基类。
+- ContextClosedEvent 和 ContextRefreshedEvent 是内部用来实现关闭事件和刷新事件的类
+
+
+
+```java
+public interface ApplicationEventPublisher {
+  /**
+   * 将应用程序事件通知注册到此应用程序的所有侦听器。 事件可以是框架事件（如RequestHandledEvent）或应用程序特定的事件。
+   *
+   * @param event the event to publish
+   */
+  void publishEvent(ApplicationEvent event);
+}
+```
+
+- 事件发布者，所有的事件都需要从这个接口发布出去
+
+```java
+public interface ApplicationListener<E extends ApplicationEvent> extends EventListener {
+  /**
+   * Handle an application event.
+   *
+   * @param event the event to respond to
+   */
+  void onApplicationEvent(E event);
+}
+```
+
+- 事件监听者，负责监听感兴趣的事件。
+
+```java
+public interface ApplicationEventMulticaster {
+  /**
+   * Add a listener to be notified of all events.
+   *
+   * @param listener the listener to add
+   */
+  void addApplicationListener(ApplicationListener<?> listener);
+
+  /**
+   * Remove a listener from the notification list.
+   *
+   * @param listener the listener to remove
+   */
+  void removeApplicationListener(ApplicationListener<?> listener);
+
+  /**
+   * Multicast the given application event to appropriate listeners.
+   *
+   * @param event the event to multicast
+   */
+  void multicastEvent(ApplicationEvent event);
+}
+```
+
+- 在事件广播器中定义了添加监听和删除监听的方法以及一个广播事件的方法 `multicastEvent` 最终推送时间消息也会经过这个接口方法来处理谁该接收事件。
+
+#### 测试
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+    <bean class="org.springframework.beans.factory.aeal.ContextRefreshedEventListener"/>
+
+    <bean class="org.springframework.beans.factory.aeal.AEALCustomEventListener"/>
+
+    <bean class="org.springframework.beans.factory.aeal.AEALContextClosedEventListener"/>
+
+</beans>
+```
+
+```java
+public class AEALContextClosedEventListener implements ApplicationListener<ContextClosedEvent> {
+  @Override
+  public void onApplicationEvent(ContextClosedEvent event) {
+    System.out.println("关闭事件：" + this.getClass().getName());
+  }
+}
+
+@Setter
+@Getter
+public class AEALCustomEvent extends ApplicationContextEvent {
+  private Long id;
+  private String message;
+
+  public AEALCustomEvent(Object source, Long id, String message) {
+    super(source);
+    this.id = id;
+    this.message = message;
+  }
+}
+
+
+public class AEALCustomEventListener implements ApplicationListener<AEALCustomEvent> {
+  @Override
+  public void onApplicationEvent(AEALCustomEvent event) {
+    System.out.println("收到：" + event.getSource() + "消息; 时间：" + new Date());
+    System.out.println("消息：" + event.getId() + ":" + event.getMessage());
+  }
+}
+
+public class ContextRefreshedEventListener implements ApplicationListener<ContextRefreshedEvent> {
+  @Override
+  public void onApplicationEvent(ContextRefreshedEvent event) {
+    System.out.println("刷新事件：" + this.getClass().getName());
+  }
+}
+```
+
+```java
+public class ApplicationEventAndListenerTest {
+  @Test
+  public void test_event() {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-application-event-and-listener.xml");
+    applicationContext.publishEvent(
+        new AEALCustomEvent(applicationContext, 1019129009086763L, "成功了！"));
+
+    applicationContext.registerShutdownHook();
+  }
+}
+```
+
+
+
+### R
+
+`isAssignableFrom` 和 `instanceof` 相似，不过 `isAssignableFrom` 是用来判断子类和父类的关系的，或者接口的实现类和接口的关系的，默认所有的类的终极父类都是 `Object`。如果 `A.isAssignableFrom(B)` 结果是 true，证明 B 可以转换成为 A, 也就是 A 可以由 B 转换而来。
+

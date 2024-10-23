@@ -54,4 +54,20 @@ public class ClassUtils {
           (PrivilegedAction<ClassLoader>) ClassLoader::getSystemClassLoader);
     }
   }
+
+  /**
+   * 检查指定的类是否为cglib生成的类。
+   * @param clazz the class to check
+   */
+  public static boolean isCglibProxyClass(Class<?> clazz) {
+    return (clazz != null && isCglibProxyClassName(clazz.getName()));
+  }
+
+  /**
+   * 请检查指定的类名是否为cglib生成的类。
+   * @param className the class name to check
+   */
+  public static boolean isCglibProxyClassName(String className) {
+    return (className != null && className.contains("$$"));
+  }
 }
