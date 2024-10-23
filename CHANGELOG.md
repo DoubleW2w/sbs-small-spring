@@ -855,6 +855,8 @@ beanFactory.addBeanPostProcessor(beanPostProcessor);
 
 ## 初始化和销毁方法
 
+> 代码分支: [init-method-and-destroy-method](https://github.com/DoubleW2w/sbs-small-spring/tree/init-method-and-destroy-method)
+
 ### S
 
 为了给 Bean 提供更全面的生命周期管理，希望可以在 Bean 初始化过程中，执行一些别的操作。比如预加载数据或者在程序关闭时销毁资源等。
@@ -1093,6 +1095,8 @@ bean 的生命周期如下：
 
 ## Aware 接口感知容器对象
 
+> 代码分支: [aware-interface](https://github.com/DoubleW2w/sbs-small-spring/tree/aware-interface)
+
 ### S
 
 目前的功能实现有 Bean 对象的定义和注册、BeanFactoryPostProcessor、BeanPostProcessor、InitializingBean、DisposableBean、以及在 XML 新增的一些配置处理，初始化方法和销毁方法等。
@@ -1133,9 +1137,9 @@ public interface BeanNameAware extends Aware {
 
 
 
-#### ApplicationContextAware处理
+#### ApplicationContextAware 处理
 
-`refresh()` 方法就是Spring容器的模板操作过程，由于 ApplicationContext 的获取并不能直接在创建 Bean 时候就可以拿到，所以添加 `ApplicationContextAwareProcessor` 的操作，让继承自 `ApplicationContextAware` 的 Bean 对象都能感知所属的 `ApplicationContext`，
+`refresh()` 方法就是 Spring 容器的模板操作过程，由于 ApplicationContext 的获取并不能直接在创建 Bean 时候就可以拿到，所以添加 `ApplicationContextAwareProcessor` 的操作，让继承自 `ApplicationContextAware` 的 Bean 对象都能感知所属的 `ApplicationContext`，
 
 ```java
 public abstract class AbstractApplicationContext extends DefaultResourceLoader
@@ -1281,3 +1285,149 @@ public class HelloWorldService
 ### R
 
 Bean 的生命周期简单来说只有四步：实例化-填充属性-使用-销毁。本章节主要实现 Aware 的感知接口的四个继承接口 BeanNameAware, BeanClassLoaderAware, ApplicationContextAware, BeanFactoryAware。
+
+## 对象作用域和 FactoryBean
+
+> 代码分支: [bean-scope-and-factory-bean](https://github.com/DoubleW2w/sbs-small-spring/tree/bean-scope-and-factory-bean)
+
+### S
+
+如果我们想创建出原型对象而不是单例对象呢？
+
+### T
+
+实现 FactoryBean 来帮助用户创建更为复杂的 Bean 对象。
+
+- 控制 Bean 对象的创建过程，包括对象的初始化、配置以及返回的对象类型等。
+- 提供 Bean 对象的类型信息
+- 单例对象和原型对象的支持
+
+### A
+
+我们知道创建 Bean 对象的入口是 `getBean()` 方法，真正的逻辑是在 `createBean()` 方法中。
+
+因此增加了从 FactoryBeanRegistrySupport 中创建 Bean 的方式。
+
+```java
+public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport
+  implements ConfigurableBeanFactory {
+  protected <T> T doGetBean(final String name, final Object[] args) {
+    Object sharedInstance = getSingleton(name);
+    if (sharedInstance != null) {
+      // 如果是 FactoryBean，则需要调用 FactoryBean#getObject
+      return (T) getObjectForBeanInstance(sharedInstance, name);
+    }
+		// 否则直接返回
+    BeanDefinition beanDefinition = getBeanDefinition(name);
+    Object bean = createBean(name, beanDefinition, args);
+    return (T) getObjectForBeanInstance(bean, name);
+  }
+
+  private Object getObjectForBeanInstance(Object beanInstance, String beanName) {
+    // bean实例不是 FactoryBean 类型就直接返回bean实例
+    if (!(beanInstance instanceof FactoryBean)) {
+      return beanInstance;
+    }
+
+    Object object = getCachedObjectForFactoryBean(beanName);
+    // 如果缓存中没有找到对象，则通过FactoryBean创建
+    if (object == null) {
+      FactoryBean<?> factoryBean = (FactoryBean<?>) beanInstance;
+      object = getObjectFromFactoryBean(factoryBean, beanName);
+    }
+    return object;
+  }
+}
+```
+
+createBean 执行对象创建、属性填充、依赖加载、前置后置处理、初始化等操作后，就要开始做执行判断整个对象是否是一个 FactoryBean 对象。
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
+    implements AutowireCapableBeanFactory { 
+@Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
+      throws BeansException {
+    Object bean = null;
+    try {
+      bean = createBeanInstance(beanDefinition, beanName, args);
+      // 给 Bean 填充属性
+      applyPropertyValues(beanName, bean, beanDefinition);
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+
+    // 注册实现了 DisposableBean 接口的 Bean 对象
+    registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+    // 判断 SCOPE_SINGLETON、SCOPE_PROTOTYPE
+    if (beanDefinition.isSingleton()) {
+      addSingleton(beanName, bean);
+    }
+    return bean;
+  }
+}
+```
+
+<p></p>
+
+在加载 BeanDefinition 的方法中也添加了对 `scope` 属性的解析
+
+```java
+public class XmlBeanDefinitionReader extends AbstractBeanDefinitionReader {
+  protected void doLoadBeanDefinitions(InputStream inputStream) throws ClassNotFoundException 
+    Document doc = XmlUtil.readXML(inputStream);
+  Element root = doc.getDocumentElement();
+  NodeList childNodes = root.getChildNodes();
+
+  for (int i = 0; i < childNodes.getLength(); i++) {
+		//....
+    String beanScope = bean.getAttribute("scope");
+
+    // 获取 Class，方便获取类中的名称
+    Class<?> clazz = Class.forName(className);
+    // 优先级 id > name
+    String beanName = StrUtil.isNotEmpty(id) ? id : name;
+    if (StrUtil.isEmpty(beanName)) {
+      beanName = StrUtil.lowerFirst(clazz.getSimpleName());
+    }
+
+    // 定义Bean
+    BeanDefinition beanDefinition = new BeanDefinition(clazz);
+    beanDefinition.setInitMethodName(initMethod);
+    beanDefinition.setDestroyMethodName(destroyMethodName);
+
+    if (StrUtil.isNotEmpty(beanScope)) {
+      beanDefinition.setScope(beanScope);
+    }
+		//...
+  }
+}
+```
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-8-%E5%AF%B9%E8%B1%A1%E4%BD%9C%E7%94%A8%E5%9F%9F%E5%92%8CFacotryBean.drawio-1.png"/>
+
+### R
+
+对象作用域简单分为 `singleton` 和 `prototype`，单例的情况下，会从缓存中查看bean对象是否已经生成过，否则调用生成方法。原型情况下，不会做判断，而是每次都会调用生成方法。
+
+
+
+FactoryBean 可以用于创建复杂的或可配置的 Spring bean 实例。
+
+```java
+public interface FactoryBean<T> {
+  T getObject() throws Exception;
+
+  Class<?> getObjectType();
+
+  boolean isSingleton();
+}
+```
+
+从上面就可以判断它的作用有以下几点：
+
+1. 创建对象：实现这个接口的类需要实现 getObject() 方法，该方法返回所需对象的实例。这个创建过程中，用户可以控制创建逻辑等。
+2. 提供对象的类型信息：getObjectType() 方法返回创建的对象的类型。
+3. 单例和原型的判断支持：isSingleton() 方法返回一个布尔值，指示返回的对象是单例还是原型。

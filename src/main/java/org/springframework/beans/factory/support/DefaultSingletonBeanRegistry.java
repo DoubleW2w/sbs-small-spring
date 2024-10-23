@@ -16,6 +16,8 @@ import java.util.Set;
  * @project: sbs-small-spring
  */
 public class DefaultSingletonBeanRegistry implements SingletonBeanRegistry {
+  /** null单例对象的内部标记 */
+  protected static final Object NULL_OBJECT = new Object();
 
   private Map<String, Object> singletonObjects = new HashMap<>();
 
@@ -28,6 +30,10 @@ public class DefaultSingletonBeanRegistry implements SingletonBeanRegistry {
 
   @Override
   public void registerSingleton(String beanName, Object singletonObject) {
+    singletonObjects.put(beanName, singletonObject);
+  }
+
+  protected void addSingleton(String beanName, Object singletonObject) {
     singletonObjects.put(beanName, singletonObject);
   }
 

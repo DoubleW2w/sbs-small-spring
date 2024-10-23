@@ -2,6 +2,7 @@ package org.springframework.beans.factory.support;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
@@ -17,7 +18,7 @@ import java.util.List;
  * @date: 2024/9/29
  * @project: sbs-small-spring
  */
-public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry
+public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport
     implements ConfigurableBeanFactory {
 
   /** ClassLoader to resolve bean class names with, if necessary */
@@ -42,13 +43,31 @@ public abstract class AbstractBeanFactory extends DefaultSingletonBeanRegistry
   }
 
   protected <T> T doGetBean(final String name, final Object[] args) {
-    Object bean = getSingleton(name);
-    if (bean != null) {
-      return (T) bean;
+    Object sharedInstance = getSingleton(name);
+    if (sharedInstance != null) {
+      // 如果是 FactoryBean，则需要调用 FactoryBean#getObject
+      return (T) getObjectForBeanInstance(sharedInstance, name);
     }
 
     BeanDefinition beanDefinition = getBeanDefinition(name);
-    return (T) createBean(name, beanDefinition, args);
+    Object bean = createBean(name, beanDefinition, args);
+    return (T) getObjectForBeanInstance(bean, name);
+  }
+
+  private Object getObjectForBeanInstance(Object beanInstance, String beanName) {
+    // bean实例不是 FactoryBean 类型就直接返回bean实例
+    if (!(beanInstance instanceof FactoryBean)) {
+      return beanInstance;
+    }
+
+    Object object = getCachedObjectForFactoryBean(beanName);
+    // 如果缓存中没有找到对象，则通过FactoryBean创建
+    if (object == null) {
+      FactoryBean<?> factoryBean = (FactoryBean<?>) beanInstance;
+      object = getObjectFromFactoryBean(factoryBean, beanName);
+    }
+
+    return object;
   }
 
   protected abstract BeanDefinition getBeanDefinition(String beanName);
