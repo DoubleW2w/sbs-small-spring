@@ -1436,6 +1436,9 @@ public interface FactoryBean<T> {
 
 ## 容器事件和事件监听器
 
+> 代码分支: [application-event-and-listener](https://github.com/DoubleW2w/sbs-small-spring/tree/aware-interface)
+
+
 ### S
 
 Spring 的事件功能是基于观察者模式——**当一个对象的状态发生改变时，所有依赖于它的对象都得到通知并被自动更新。**
@@ -1645,3 +1648,245 @@ public class ApplicationEventAndListenerTest {
 
 `isAssignableFrom` 和 `instanceof` 相似，不过 `isAssignableFrom` 是用来判断子类和父类的关系的，或者接口的实现类和接口的关系的，默认所有的类的终极父类都是 `Object`。如果 `A.isAssignableFrom(B)` 结果是 true，证明 B 可以转换成为 A, 也就是 A 可以由 B 转换而来。
 
+
+## 基于 JDK、Cglib 实现 AOP
+
+> 代码分支: [jdk-cglib-dynamic-proxy](https://github.com/DoubleW2w/sbs-small-spring/tree/jdk-cglib-dynamic-proxy)
+
+
+
+### S
+
+#### 什么是切面
+
+想象一下，你现在有一个功能点是需要进行嵌入到多个地方，如果一个一个点去嵌入的话，会很费事，如果后续这个嵌入点有点变动，所有地方的代码都需要进行修改。
+这个时候，如果从嵌入点的角度来看，哪些个地方符合我的监听条件，我就嵌入哪里，不符合的我干脆不搭理。“就像你切菜，长度为 10cm 的我就进行对半切”，而上面的“长度为 10cm”就是要执行“对半切”这个功能点的条件。
+
+如果放到代码来说明，就相当于有很多个方法需要执行，但需要进行嵌入功能点的方法是有条件的。那么符合条件的方法，在执行的时候就会被拦截，然后去执行扩展操作。
+
+专业地来说，**面向切面编程，它能够将那些与「业务逻辑」无关，却为「业务模块」所共同调用的逻辑（事务处理、日志处理、权限控制等）封装起来，便于减少系统的重复代码，降低耦合度。**
+
+<img src="https://bugstack.cn/assets/images/spring/spring-12-01.png">
+
+<p style="text-align: center"> <a href="https://bugstack.cn"> 图片来自小傅哥 </a> </p>
+
+
+
+#### 切面的一些术语
+
+JoinPoint 织入点、连接点，指的是需要执行代理操作的某个类的方法
+
+PointCut 切入点是 JoinPoint 的表达方式，也就是被切面拦截的连接点。
+
+
+
+### T1-切点表达式
+
+需要匹配类，定义 `ClassFilter` 接口；匹配方法，定义 `MethodMatcher` 接口。
+
+而一个 PonitCut 需要匹配类和方法，所以会包含 `ClassFilter`、`MethodMatcher`
+
+```java
+public class PointcutExpressionTest {
+  @Test
+  public void testPointcutExpression() throws Exception {
+    // 简单实现，只实现了 execution 方式，表示匹配 HelloService和他子类 下面的所有方法
+    AspectJExpressionPointcut pointcut =
+        new AspectJExpressionPointcut(
+            "execution(* org.springframework.test.service.HelloService.*(..))");
+    Class<HelloService> clazz = HelloService.class;
+    Method method = clazz.getDeclaredMethod("sayHello");
+    assertThat(pointcut.matches(clazz)).isTrue();
+    assertThat(pointcut.matches(method, clazz)).isTrue();
+  }
+}
+```
+
+### T2—JDK 动态代理
+
+AopProxy 是获取代理对象的抽象接口
+
+```java
+public interface AopProxy {
+  Object getProxy();
+}
+```
+
+JdkDynamicAopProxy 的基于 JDK 动态代理的具体实现, 并实现 InvocationHandler, 在 invoke 方法中进行拦截处理。如果当前类和当前方法匹配成功，就执行拦截，转而执行拦截器的方法，否则就直接放行。
+
+```java
+public class JdkDynamicAopProxy implements AopProxy, InvocationHandler {
+
+  private final AdvisedSupport advised;
+
+  public JdkDynamicAopProxy(AdvisedSupport advised) {
+    this.advised = advised;
+  }
+
+  @Override
+  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    // 检查方法匹配器是否与当前方法是否匹配
+    if (advised
+        .getMethodMatcher()
+        .matches(method, advised.getTargetSource().getTarget().getClass())) {
+      // 代理方法
+      MethodInterceptor methodInterceptor = advised.getMethodInterceptor();
+      return methodInterceptor.invoke(
+          new ReflectiveMethodInvocation(advised.getTargetSource().getTarget(), method, args));
+    }
+    return method.invoke(advised.getTargetSource().getTarget(), args);
+  }
+
+  @Override
+  public Object getProxy() {
+    return Proxy.newProxyInstance(
+        getClass().getClassLoader(), advised.getTargetSource().getTargetClass(), this);
+  }
+}
+```
+
+TargetSource 是被代理的目标对象的封装。
+
+```java
+public class TargetSource {
+  /** 目标对象 */
+  private final Object target;
+
+  public TargetSource(Object target) {
+    this.target = target;
+  }
+
+  public Class<?>[] getTargetClass() {
+    return this.target.getClass().getInterfaces();
+  }
+
+  public Object getTarget() {
+    return this.target;
+  }
+}
+```
+
+<p> </p>
+
+**测试类**
+
+创建出目标对象，并根据目标对象创建一个「通知增强支持类 AdvisedSupport」，设置好「TargetSource」、「MethodInterceptor」、「MethodMatcher」，从而达到拦截的效果。
+
+```java
+public class DynamicProxyTest {
+  @Test
+  public void test_jdkDynamic() throws Exception {
+    LoveUService loveUService = new LoveUServiceImpl();
+
+    AdvisedSupport advisedSupport = new AdvisedSupport();
+    TargetSource targetSource = new TargetSource(loveUService);
+    LoveUServiceInterceptor methodInterceptor = new LoveUServiceInterceptor();
+    AspectJExpressionPointcut pointcut =
+        new AspectJExpressionPointcut(
+            "execution(* org.springframework.test.service.LoveUService.explode(..))");
+    MethodMatcher methodMatcher = pointcut.getMethodMatcher();
+    advisedSupport.setTargetSource(targetSource);
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+    advisedSupport.setMethodMatcher(methodMatcher);
+
+    LoveUService proxy = (LoveUService) new JdkDynamicAopProxy(advisedSupport).getProxy();
+    proxy.explode();
+  }
+}
+```
+
+
+
+### T3-cglib代理
+
+```xml
+<dependency>
+  <groupId>cglib</groupId>
+  <artifactId>cglib</artifactId>
+  <version>3.3.0</version>
+</dependency>
+```
+
+
+
+cglib 通过 Enhancer 类来完成，设置超类，设置接口，设置回调。
+
+```java
+public class CglibAopProxy implements AopProxy {
+
+  private final AdvisedSupport advised;
+
+  public CglibAopProxy(AdvisedSupport advised) {
+    this.advised = advised;
+  }
+
+  @Override
+  public Object getProxy() {
+    Enhancer enhancer = new Enhancer();
+    Class<?> aClass = advised.getTargetSource().getTarget().getClass();
+    aClass = ClassUtils.isCglibProxyClass(aClass) ? aClass.getSuperclass() : aClass;
+    enhancer.setSuperclass(aClass);
+    enhancer.setInterfaces(advised.getTargetSource().getTargetClass());
+    enhancer.setCallback(new DynamicAdvisedInterceptor(advised));
+    return enhancer.create();
+  }
+
+  /** 注意此处的MethodInterceptor是cglib中的接口，advised中的MethodInterceptor的AOP联盟中定义的接口，因此定义此类做适配 */
+  private static class DynamicAdvisedInterceptor implements MethodInterceptor {
+    private final AdvisedSupport advised;
+
+    public DynamicAdvisedInterceptor(AdvisedSupport advised) {
+      this.advised = advised;
+    }
+
+    @Override
+    public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy)
+        throws Throwable {
+      // cglib方法调用
+      CglibMethodInvocation methodInvocation =
+          new CglibMethodInvocation(
+              advised.getTargetSource().getTarget(), method, objects, methodProxy);
+      // 检查目标方法是否符合通知条件
+      if (advised
+          .getMethodMatcher()
+          .matches(method, advised.getTargetSource().getTarget().getClass())) {
+        return advised.getMethodInterceptor().invoke(methodInvocation);
+      }
+      return methodInvocation.proceed();
+    }
+  }
+
+  private static class CglibMethodInvocation extends ReflectiveMethodInvocation {
+    private final MethodProxy methodProxy;
+
+    public CglibMethodInvocation(
+        Object target, Method method, Object[] arguments, MethodProxy methodProxy) {
+      super(target, method, arguments);
+      this.methodProxy = methodProxy;
+    }
+
+    @Override
+    public Object proceed() throws Throwable {
+      return this.methodProxy.invoke(this.target, this.arguments);
+    }
+  }
+}
+```
+
+**测试类**
+
+```java
+@Test
+public void test_cglibDynamic() throws Exception {
+  LoveUService proxy = (LoveUService) new CglibAopProxy(advisedSupport).getProxy();
+  proxy.explode();
+}
+```
+
+### R
+
+本节完成了「切面技术」的一个具体实现，如何代理目标对象，过滤方法，拦截方法，以及使用cglib和jdk代理。
+
+- 代理目标对象本质上是通过 Proxy 类(jdk方式）和 Enhancer 类（cglib方法）创建目标对象的代理对象。
+- 被代理的目标对象是被封装在 TargetSource 类中。
+- 拦截一个方法需要知道是否匹配到目标类、目标方法，这就用到了 `TargetSource` 和 `MethodMatcher` ，来进行检查。如果**不符合通知条件**，那就直接放行，否则进行拦截，执行增强代码逻辑——`MethodInterceptor`。
