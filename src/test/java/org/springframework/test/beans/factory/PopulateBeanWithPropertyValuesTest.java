@@ -1,4 +1,4 @@
-package org.springframework.beans.factory;
+package org.springframework.test.beans.factory;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.PropertyValue;
@@ -6,6 +6,8 @@ import org.springframework.beans.PropertyValues;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanReference;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.test.service.HelloService;
+import org.springframework.test.service.WorldService;
 
 /**
  * @author: DoubleW2w

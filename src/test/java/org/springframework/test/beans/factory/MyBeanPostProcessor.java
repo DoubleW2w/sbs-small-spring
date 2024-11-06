@@ -1,7 +1,8 @@
-package org.springframework.beans.factory;
+package org.springframework.test.beans.factory;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.test.service.HelloService;
 
 /**
  * @author: DoubleW2w

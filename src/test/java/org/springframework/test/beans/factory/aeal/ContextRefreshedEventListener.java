@@ -1,4 +1,4 @@
-package org.springframework.beans.factory.aeal;
+package org.springframework.test.beans.factory.aeal;
 
 import org.springframework.beans.context.ApplicationListener;
 import org.springframework.beans.context.event.ContextRefreshedEvent;

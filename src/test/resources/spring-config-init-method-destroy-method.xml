@@ -5,11 +5,11 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
        http://www.springframework.org/schema/beans/spring-beans.xsd">
 
-    <bean id="worldService" class="org.springframework.beans.factory.WorldService"
+    <bean id="worldService" class="org.springframework.test.service.WorldService"
           init-method="initDataMethod" destroy-method="destroyDataMethod">
     </bean>
 
-    <bean id="helloService" class="org.springframework.beans.factory.HelloService">
+    <bean id="helloService" class="org.springframework.test.service.HelloService">
         <property name="worldService" ref="worldService"/>
         <property name="name" value="lisi"/>
         <property name="id" value="100111"/>

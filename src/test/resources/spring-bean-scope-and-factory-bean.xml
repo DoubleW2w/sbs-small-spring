@@ -3,7 +3,7 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="http://www.springframework.org/schema/beans
        http://www.springframework.org/schema/beans/spring-beans.xsd">
-    <bean id="userService" class="org.springframework.beans.factory.bsafb.BSAFBUserService"
+    <bean id="userService" class="org.springframework.test.beans.factory.bsafb.BSAFBUserService"
           scope="prototype">
         <property name="uId" value="10001"/>
         <property name="company" value="腾讯"/>
@@ -11,6 +11,6 @@
         <property name="userDao" ref="proxyUserDao"/>
     </bean>
 
-    <bean id="proxyUserDao" class="org.springframework.beans.factory.bsafb.BSAFBProxyBeanFactory"/>
+    <bean id="proxyUserDao" class="org.springframework.test.beans.factory.bsafb.BSAFBProxyBeanFactory"/>
 
 </beans>

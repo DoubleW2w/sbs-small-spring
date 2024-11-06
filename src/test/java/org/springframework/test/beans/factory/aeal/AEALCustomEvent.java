@@ -1,4 +1,4 @@
-package org.springframework.beans.factory.aeal;
+package org.springframework.test.beans.factory.aeal;
 
 import lombok.Getter;
 import lombok.Setter;

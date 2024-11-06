@@ -1,8 +1,12 @@
-package org.springframework.beans.factory;
+package org.springframework.test.service;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.context.ApplicationContext;
 import org.springframework.beans.context.ApplicationContextAware;
+import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.beans.factory.BeanNameAware;
 
 /**
  * @author: DoubleW2w

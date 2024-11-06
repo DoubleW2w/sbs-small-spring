@@ -1,10 +1,11 @@
-package org.springframework.beans.factory;
+package org.springframework.test.beans.factory;
 
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.NoOp;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.test.service.HelloService;
 
 import java.lang.reflect.Constructor;
 

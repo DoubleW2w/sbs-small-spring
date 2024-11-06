@@ -1,7 +1,8 @@
-package org.springframework.beans.factory;
+package org.springframework.test.beans.factory;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.context.support.ClassPathXmlApplicationContext;
+import org.springframework.test.service.HelloService;
 
 /**
  * @author: DoubleW2w

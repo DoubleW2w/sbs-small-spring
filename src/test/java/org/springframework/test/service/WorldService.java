@@ -1,4 +1,4 @@
-package org.springframework.beans.factory;
+package org.springframework.test.service;
 
 import java.util.HashMap;
 import java.util.Map;

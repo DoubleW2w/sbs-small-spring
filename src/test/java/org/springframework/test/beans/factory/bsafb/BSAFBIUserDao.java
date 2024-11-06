@@ -1,4 +1,4 @@
-package org.springframework.beans.factory.bsafb;
+package org.springframework.test.beans.factory.bsafb;
 
 /**
  * BSAFB 是 bean-scope-and-factory-bean 分支名称的首字母

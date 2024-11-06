@@ -5,6 +5,6 @@
        xsi:schemaLocation="http://www.springframework.org/schema/beans
        http://www.springframework.org/schema/beans/spring-beans.xsd">
 
-    <bean id="helloWorldService" class="org.springframework.beans.factory.HelloWorldService">
+    <bean id="helloWorldService" class="org.springframework.test.service.HelloWorldService">
     </bean>
 </beans>

@@ -1,4 +1,4 @@
-package org.springframework.beans.factory.bsafb;
+package org.springframework.test.beans.factory.bsafb;
 
 import org.junit.jupiter.api.Test;
 import org.openjdk.jol.info.ClassLayout;
