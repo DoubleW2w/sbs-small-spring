@@ -9,10 +9,12 @@ import org.springframework.aop.TargetSource;
 import org.springframework.aop.aspectj.AspectJExpressionPointcut;
 import org.springframework.aop.framework.CglibAopProxy;
 import org.springframework.aop.framework.JdkDynamicAopProxy;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.aop.framework.ReflectiveMethodInvocation;
 import org.springframework.test.common.LoveUServiceInterceptor;
 import org.springframework.test.service.LoveUService;
 import org.springframework.test.service.LoveUServiceImpl;
+import org.springframework.test.service.WorldService;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -52,6 +54,19 @@ public class DynamicProxyTest {
   @Test
   public void test_cglibDynamic() throws Exception {
     LoveUService proxy = (LoveUService) new CglibAopProxy(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_proxyFactory() throws Exception {
+    // 使用JDK动态代理
+    advisedSupport.setProxyTargetClass(false);
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+    System.out.println("---------------------------------------------------------------");
+    // 使用CGLIB动态代理
+    advisedSupport.setProxyTargetClass(true);
+    proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
     proxy.explode();
   }
 
