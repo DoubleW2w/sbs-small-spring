@@ -1,9 +1,13 @@
 package org.springframework.test.aop;
 
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.AdvisedSupport;
+import org.springframework.aop.GenericInterceptor;
 import org.springframework.aop.MethodMatcher;
 import org.springframework.aop.TargetSource;
 import org.springframework.aop.aspectj.AspectJExpressionPointcut;
@@ -11,14 +15,11 @@ import org.springframework.aop.framework.CglibAopProxy;
 import org.springframework.aop.framework.JdkDynamicAopProxy;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.aop.framework.ReflectiveMethodInvocation;
-import org.springframework.test.common.LoveUServiceInterceptor;
+import org.springframework.test.common.*;
 import org.springframework.test.service.LoveUService;
 import org.springframework.test.service.LoveUServiceImpl;
+import org.springframework.test.service.LoveUServiceWithExceptionImpl;
 import org.springframework.test.service.WorldService;
-
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 
 /**
  * @author: DoubleW2w
@@ -35,7 +36,7 @@ public class DynamicProxyTest {
 
     advisedSupport = new AdvisedSupport();
     TargetSource targetSource = new TargetSource(loveUService);
-    LoveUServiceInterceptor methodInterceptor = new LoveUServiceInterceptor();
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
     AspectJExpressionPointcut pointcut =
         new AspectJExpressionPointcut(
             "execution(* org.springframework.test.service.LoveUService.explode(..))");
@@ -67,6 +68,83 @@ public class DynamicProxyTest {
     // 使用CGLIB动态代理
     advisedSupport.setProxyTargetClass(true);
     proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_beforeAdvice() throws Exception {
+    // 设置BeforeAdvice
+    LoveUServiceBeforeAdvice beforeAdvice = new LoveUServiceBeforeAdvice();
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
+    methodInterceptor.setBeforeAdvice(beforeAdvice);
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_AfterAdvice() throws Exception {
+    LoveUServiceAfterAdvice afterAdvice = new LoveUServiceAfterAdvice();
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
+    methodInterceptor.setAfterAdvice(afterAdvice);
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_afterReturningAdvice() throws Exception {
+    LoveUServiceAfterReturningAdvice afterReturningAdvice = new LoveUServiceAfterReturningAdvice();
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
+    methodInterceptor.setAfterReturningAdvice(afterReturningAdvice);
+
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_throwsAdvice() throws Exception {
+    LoveUService loveUService = new LoveUServiceWithExceptionImpl();
+    // 设置ThrowsAdvice
+    LoveUServiceThrowsAdvice throwsAdvice = new LoveUServiceThrowsAdvice();
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
+    methodInterceptor.setThrowsAdvice(throwsAdvice);
+
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+    advisedSupport.setTargetSource(new TargetSource(loveUService));
+
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_allAdvice() throws Exception {
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
+    methodInterceptor.setBeforeAdvice(new LoveUServiceBeforeAdvice());
+    methodInterceptor.setAfterReturningAdvice(new LoveUServiceAfterReturningAdvice());
+    methodInterceptor.setThrowsAdvice(new LoveUServiceThrowsAdvice());
+    methodInterceptor.setAfterAdvice(new LoveUServiceAfterAdvice());
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+    proxy.explode();
+  }
+
+  @Test
+  public void test_allAdviceWithException() throws Exception {
+    LoveUService loveUService = new LoveUServiceWithExceptionImpl();
+
+    // 拦截器并设置好各种通知
+    GenericInterceptor methodInterceptor = new GenericInterceptor();
+    methodInterceptor.setBeforeAdvice(new LoveUServiceBeforeAdvice());
+    methodInterceptor.setAfterReturningAdvice(new LoveUServiceAfterReturningAdvice());
+    methodInterceptor.setThrowsAdvice(new LoveUServiceThrowsAdvice());
+    methodInterceptor.setAfterAdvice(new LoveUServiceAfterAdvice());
+    advisedSupport.setMethodInterceptor(methodInterceptor);
+
+    advisedSupport.setTargetSource(new TargetSource(loveUService));
+    LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
     proxy.explode();
   }
 

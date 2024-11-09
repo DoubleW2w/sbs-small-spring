@@ -7,4 +7,6 @@ package org.springframework.test.service;
  */
 public interface LoveUService {
   void explode();
+
+  String explodeReturn();
 }

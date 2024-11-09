@@ -1797,7 +1797,7 @@ public class DynamicProxyTest {
 
 
 
-### T3-cglib代理
+### T3-cglib 代理
 
 ```xml
 <dependency>
@@ -1885,8 +1885,241 @@ public void test_cglibDynamic() throws Exception {
 
 ### R
 
-本节完成了「切面技术」的一个具体实现，如何代理目标对象，过滤方法，拦截方法，以及使用cglib和jdk代理。
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/sbs-small-spring%E5%9B%BE%E7%BA%B8-%E5%9F%BA%E4%BA%8Ejdk%E3%80%81cglib%E4%BB%A3%E7%90%86%E5%AE%9E%E7%8E%B0aop.drawio-1.png"/>
 
-- 代理目标对象本质上是通过 Proxy 类(jdk方式）和 Enhancer 类（cglib方法）创建目标对象的代理对象。
+本节完成了「切面技术」的一个具体实现，如何代理目标对象，过滤方法，拦截方法，以及使用 cglib 和 jdk 代理。
+
+- 代理目标对象本质上是通过 Proxy 类(jdk 方式）和 Enhancer 类（cglib 方法）创建目标对象的代理对象。
 - 被代理的目标对象是被封装在 TargetSource 类中。
-- 拦截一个方法需要知道是否匹配到目标类、目标方法，这就用到了 `TargetSource` 和 `MethodMatcher` ，来进行检查。如果**不符合通知条件**，那就直接放行，否则进行拦截，执行增强代码逻辑——`MethodInterceptor`。
+- 拦截一个方法需要知道是否匹配到目标类、目标方法，这就用到了 `TargetSource` 和 `MethodMatcher` ，来进行检查。如果 **不符合通知条件**，那就直接放行，否则进行拦截，执行增强代码逻辑——`MethodInterceptor`。
+
+
+
+## AOP 代理工厂将 AOP 扩展到 Bean 的生命周期
+
+### S
+
+在 [上一章节](#基于 JDK、Cglib 实现 AOP) 中，已经实现了切点表达式、以及通过 JDK 动态代理和 Cglib 代理的方式实现简单的 AOP 功能。
+
+其中，代理对象的创建是通过 `Proxy.newProxyInstance()` 或者 `Enhancer enhancer` 来完成，以及通过匹配方法来拦截方法执行扩展操作。但是这个步骤却没有融合进 Spring 的生命周期中。
+
+而且我们通过测试类来看，也很复杂。
+
+### T1-AOP 代理工厂
+
+之前我们创建代理工厂是直接通过 `new` 的方式进行实现的，现在我们实现一个 aop 代理工厂来实现，目的是简化代理的创建方式。
+
+```java
+LoveUService proxy = (LoveUService) new JdkDynamicAopProxy(advisedSupport).getProxy();
+proxy.explode();
+// 或者
+LoveUService proxy = (LoveUService) new CglibAopProxy(advisedSupport).getProxy();
+proxy.explode();
+```
+
+定义代理工厂
+
+```java
+public class ProxyFactory {
+  private AdvisedSupport advisedSupport;
+
+  public ProxyFactory(AdvisedSupport advisedSupport) {
+    this.advisedSupport = advisedSupport;
+  }
+
+  public Object getProxy() {
+    return createAopProxy().getProxy();
+  }
+
+  /**
+   * 默认情况下是JDK动态代理
+   *
+   * @return
+   */
+  private AopProxy createAopProxy() {
+    if (advisedSupport.isProxyTargetClass()) {
+      return new CglibAopProxy(advisedSupport);
+    }
+    return new JdkDynamicAopProxy(advisedSupport);
+  }
+}
+```
+
+本质上还是不变，不过需要增加 **代理方式的选择**，即通过 `proxyTargetClass` 字段来判断要进行 jdk 代理还是 cglib 代理。测试类的修改就统一通过 `ProxyFactory` 来实现。
+
+```java
+@Test
+public void test_proxyFactory() throws Exception {
+  // 使用JDK动态代理
+  advisedSupport.setProxyTargetClass(false);
+  LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+  proxy.explode();
+  System.out.println("---------------------------------------------------------------");
+  // 使用CGLIB动态代理
+  advisedSupport.setProxyTargetClass(true);
+  proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+  proxy.explode();
+}
+```
+
+### T2-各种通知(advice)实现
+
+Spring 将 AOP 联盟中的 Advice 细化出各种类型的 Advice，常用的有 `BeforeAdvice`/`AfterAdvice`/`AfterReturningAdvice`/`ThrowsAdvice`，我们可以通过扩展 MethodInterceptor 来实现。为了统一管理 MethodInterceptor，我们定义出一个 GenericInterceptor，并将各种类型的通知放置进去，类似实现一个模板方法。
+
+```java
+public class GenericInterceptor implements MethodInterceptor {
+  /** 前置通知 */
+  private BeforeAdvice beforeAdvice;
+
+  /** 后置通知 */
+  private AfterAdvice afterAdvice;
+
+  /** 返回后置通知 */
+  private AfterReturningAdvice afterReturningAdvice;
+
+  /** 抛出通知 */
+  private ThrowsAdvice throwsAdvice;
+  
+    @Override
+  public Object invoke(MethodInvocation invocation) throws Throwable {
+    Object result = null;
+    try {
+      // 前置通知
+      if (beforeAdvice != null) {
+        beforeAdvice.before(
+            invocation.getMethod(), invocation.getArguments(), invocation.getThis());
+      }
+      result = invocation.proceed();
+    } catch (Exception throwable) {
+      // 异常通知
+      if (throwsAdvice != null) {
+        throwsAdvice.throwsHandle(
+            throwable, invocation.getMethod(), invocation.getArguments(), invocation.getThis());
+      }
+    } finally {
+      // 后置通知
+      if (afterAdvice != null) {
+        afterAdvice.after(invocation.getMethod(), invocation.getArguments(), invocation.getThis());
+      }
+    }
+    // 返回通知
+    if (afterReturningAdvice != null) {
+      afterReturningAdvice.afterReturning(
+          result, invocation.getMethod(), invocation.getArguments(), invocation.getThis());
+    }
+    return result;
+  }
+  // 省略setter
+}
+```
+
+测试类
+
+```java
+@Test
+public void test_allAdvice() throws Exception {
+  LoveUService loveUService = new LoveUServiceImpl();
+
+  advisedSupport = new AdvisedSupport();
+  TargetSource targetSource = new TargetSource(loveUService);
+  AspectJExpressionPointcut pointcut =
+    new AspectJExpressionPointcut(
+    "execution(* org.springframework.test.service.LoveUService.explode(..))");
+  MethodMatcher methodMatcher = pointcut.getMethodMatcher();
+  advisedSupport.setTargetSource(targetSource);
+  advisedSupport.setMethodMatcher(methodMatcher);
+
+  GenericInterceptor methodInterceptor = new GenericInterceptor();
+  methodInterceptor.setBeforeAdvice(new LoveUServiceBeforeAdvice());
+  methodInterceptor.setAfterReturningAdvice(new LoveUServiceAfterReturningAdvice());
+  methodInterceptor.setThrowsAdvice(new LoveUServiceThrowsAdvice());
+  methodInterceptor.setAfterAdvice(new LoveUServiceAfterAdvice());
+  advisedSupport.setMethodInterceptor(methodInterceptor);
+
+  LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+  proxy.explode();
+}
+```
+
+```java
+BeforeAdvice: do something before the earth explodes
+I Am Missing
+AfterAdvice: do something after the earth explodes
+AfterReturningAdvice: do something after the earth explodes return
+```
+
+如果想测试抛出异常的增强通知，我们需要刻意抛出异常
+
+```java
+public class LoveUServiceWithExceptionImpl implements LoveUService {
+  @Override
+  public void explode() {
+    System.out.println("I Am Missing");
+    throw new RuntimeException();
+  }
+}
+```
+
+
+
+```java
+@Test
+public void test_allAdviceWithException() throws Exception {
+  LoveUService loveUService = new LoveUServiceWithExceptionImpl();
+
+  advisedSupport = new AdvisedSupport();
+  TargetSource targetSource = new TargetSource(loveUService);
+  AspectJExpressionPointcut pointcut =
+    new AspectJExpressionPointcut(
+    "execution(* org.springframework.test.service.LoveUService.explode(..))");
+  MethodMatcher methodMatcher = pointcut.getMethodMatcher();
+  advisedSupport.setTargetSource(targetSource);
+  advisedSupport.setMethodMatcher(methodMatcher);
+  
+  // 拦截器并设置好各种通知
+  GenericInterceptor methodInterceptor = new GenericInterceptor();
+  methodInterceptor.setBeforeAdvice(new LoveUServiceBeforeAdvice());
+  methodInterceptor.setAfterReturningAdvice(new LoveUServiceAfterReturningAdvice());
+  methodInterceptor.setThrowsAdvice(new LoveUServiceThrowsAdvice());
+  methodInterceptor.setAfterAdvice(new LoveUServiceAfterAdvice());
+  advisedSupport.setMethodInterceptor(methodInterceptor);
+
+  advisedSupport.setTargetSource(new TargetSource(loveUService));
+  LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+  proxy.explode();
+}
+```
+
+
+
+```java
+BeforeAdvice: do something before the earth explodes
+I Am Missing
+ThrowsAdvice: do something when the earth explodes function throw an exception
+AfterAdvice: do something after the earth explodes
+AfterReturningAdvice: do something after the earth explodes return
+```
+
+
+
+### T3-Pointcut与Advice的结合
+
+让我们回顾一下 Pointcut 与 JoinPoint 的概念。
+
+**JoinPoint 可以理解为一个“可插入的点”。它指的是在代码中，可能被AOP拦截的具体位置。**
+
+- 方法调用 `MethodInvocation`
+- 构造方法调用 `ConstructorInvocation`
+- 异常抛出
+
+**Pointcut 是一个表达式或者规则，用于选择多个JoinPoint。比如你定义一个Pointcut匹配所有public方法调用。**
+
+
+
+### T3-将 AOP 嵌入 bean 的生命管理周期
+
+本节目标是通过 `BeanPostProcessor` 把动态代理融入到 Bean 的生命周期中，以及如何组装各项切点、拦截、前置的功能和适配对应的代理器。
+
+### A
+
+### R
