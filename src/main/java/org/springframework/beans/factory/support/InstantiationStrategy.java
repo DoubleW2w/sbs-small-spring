@@ -26,4 +26,6 @@ public interface InstantiationStrategy {
   Object instantiate(
       BeanDefinition beanDefinition, String beanName, Constructor ctor, Object[] args)
       throws BeansException;
+
+  Object instantiate(BeanDefinition beanDefinition) throws BeansException;
 }

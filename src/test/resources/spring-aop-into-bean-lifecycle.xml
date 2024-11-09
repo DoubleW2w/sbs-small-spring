@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+              http://www.springframework.org/schema/beans/spring-beans.xsd">
+    <!-- 注入bean对象 -->
+    <bean id="loveUService" class="org.springframework.test.service.LoveUServiceImpl"/>
+    <!-- bean对象：自动扫描advisor，并注入 -->
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/>
+
+    <bean id="pointcutAdvisor"
+          class="org.springframework.aop.aspectj.AspectJExpressionPointcutAdvisor">
+        <property name="expression"
+                  value="execution(* org.springframework.test.service.LoveUService.explode(..))"/>
+        <property name="advice" ref="methodInterceptor"/>
+    </bean>
+
+
+    <bean id="methodInterceptor" class="org.springframework.aop.GenericInterceptor">
+        <property name="beforeAdvice" ref="beforeAdvice"/>
+    </bean>
+    <bean id="beforeAdvice" class="org.springframework.test.common.LoveUServiceBeforeAdvice"/>
+</beans>

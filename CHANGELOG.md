@@ -2102,17 +2102,17 @@ AfterReturningAdvice: do something after the earth explodes return
 
 
 
-### T3-Pointcut与Advice的结合
+### T3-Pointcut 与 Advice 的结合
 
 让我们回顾一下 Pointcut 与 JoinPoint 的概念。
 
-**JoinPoint 可以理解为一个“可插入的点”。它指的是在代码中，可能被AOP拦截的具体位置。**
+**JoinPoint 可以理解为一个“可插入的点”。它指的是在代码中，可能被 AOP 拦截的具体位置。**
 
 - 方法调用 `MethodInvocation`
 - 构造方法调用 `ConstructorInvocation`
 - 异常抛出
 
-**Pointcut 是一个表达式或者规则，用于选择多个JoinPoint。比如你定义一个Pointcut匹配所有public方法调用。**
+**Pointcut 是一个表达式或者规则，用于选择多个 JoinPoint。比如你定义一个 Pointcut 匹配所有 public 方法调用。**
 
 
 
@@ -2160,6 +2160,207 @@ public void test_advisor() throws Exception {
 
 本节目标是通过 `BeanPostProcessor` 把动态代理融入到 Bean 的生命周期中，以及如何组装各项切点、拦截、前置的功能和适配对应的代理器。
 
+```java
+public class DefaultAdvisorAutoProxyCreator
+    implements InstantiationAwareBeanPostProcessor, BeanFactoryAware {
+
+  private DefaultListableBeanFactory beanFactory;
+
+  @Override
+  public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+    this.beanFactory = (DefaultListableBeanFactory) beanFactory;
+  }
+
+  @Override
+  public Object postProcessBeforeInitialization(Object bean, String beanName)
+      throws BeansException {
+    return bean;
+  }
+
+  @Override
+  public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+    return bean;
+  }
+
+  @Override
+  public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName)
+      throws BeansException {
+    if (isInfrastructureClass(beanClass)) return null;
+
+    Collection<AspectJExpressionPointcutAdvisor> advisors =
+        beanFactory.getBeansOfType(AspectJExpressionPointcutAdvisor.class).values();
+
+    for (AspectJExpressionPointcutAdvisor advisor : advisors) {
+      ClassFilter classFilter = advisor.getPointcut().getClassFilter();
+      if (!classFilter.matches(beanClass)) continue;
+
+      AdvisedSupport advisedSupport = new AdvisedSupport();
+
+      TargetSource targetSource = null;
+      try {
+        targetSource = new TargetSource(beanClass.getDeclaredConstructor().newInstance());
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+      advisedSupport.setTargetSource(targetSource);
+      advisedSupport.setMethodInterceptor((MethodInterceptor) advisor.getAdvice());
+      advisedSupport.setMethodMatcher(advisor.getPointcut().getMethodMatcher());
+      advisedSupport.setProxyTargetClass(false);
+
+      return new ProxyFactory(advisedSupport).getProxy();
+    }
+
+    return null;
+  }
+
+  /**
+   * 「类对象表示的」类或者接口与「beanClass所表示的」类或者接口是否相同，或者是「beanClass所表示的」类或者接口的父类
+   *
+   * <p>即 是否是 Advice、Pointcut、Advisor 类
+   *
+   * @param beanClass bean对象所表示的类
+   * @return
+   */
+  private boolean isInfrastructureClass(Class<?> beanClass) {
+    return Advice.class.isAssignableFrom(beanClass)
+        || Pointcut.class.isAssignableFrom(beanClass)
+        || Advisor.class.isAssignableFrom(beanClass);
+  }
+}
+```
+
+核心方法在于 `postProcessBeforeInstantiation()` 中，通过 beanFactory.getBeansOfType 获取 `AspectJExpressionPointcutAdvisor` 开始, 针对每一个这样的 bean 类型进行一次代理，而代理的操作跟 [T3-Pointcut 与 Advice 的结合](#T3-Pointcut与Advice的结合) 是一样的。
+
+当获取到对应的 advisor 后，填充对应的属性信息，包括：目标对象、拦截方法、匹配器，之后返回代理对象即可。
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory implements AutowireCapableBeanFactory {
+
+  private InstantiationStrategy instantiationStrategy = new CglibSubclassingInstantiationStrategy();
+
+  @Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args) throws BeansException {
+    Object bean = null;
+    try {
+      // 判断是否返回代理 Bean 对象
+      bean = resolveBeforeInstantiation(beanName, beanDefinition);
+      if (null != bean) {
+        return bean;
+      }
+      // 省略...
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed.", e);
+    }
+    // 省略...
+    return bean;
+  }
+
+  protected Object resolveBeforeInstantiation(String beanName, BeanDefinition beanDefinition) {
+    Object bean = applyBeanPostProcessorBeforeInstantiation(beanDefinition.getBeanClass(), beanName);
+    if (null != bean) {
+      bean = applyBeanPostProcessorAfterInitialization(bean, beanName);
+    }
+    return bean;
+  }
+
+  // 注意，此方法为新增方法，与 “applyBeanPostProcessorBeforeInitialization” 是两个方法
+  public Object applyBeanPostProcessorBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+    for (BeanPostProcessor processor : getBeanPostProcessors()) {
+      if (processor instanceof InstantiationAwareBeanPostProcessor) {
+        Object result = ((InstantiationAwareBeanPostProcessor)processor).postProcessBeforeInstantiation(beanClass, beanName);
+        if (null != result) return result;
+      }
+    }
+    return null;
+  }
+}
+```
+
+判断是否返回代理 bean 对象为前置操作，如果当前的 `BeanPostProcessor` 是 `InstantiationAwareBeanPostProcessor` 就执行 postProcessBeforeInstantiation 进行代理，最后返回代理对象
+
 ### A
 
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+              http://www.springframework.org/schema/beans/spring-beans.xsd">
+    <!-- 注入bean对象 -->
+    <bean id="loveUService" class="org.springframework.test.service.LoveUServiceImpl"/>
+    <!-- bean对象：自动扫描advisor，并注入 -->
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/>
+
+    <bean id="pointcutAdvisor"
+          class="org.springframework.aop.aspectj.AspectJExpressionPointcutAdvisor">
+        <property name="expression"
+                  value="execution(* org.springframework.test.service.LoveUService.explode(..))"/>
+        <property name="advice" ref="methodInterceptor"/>
+    </bean>
+
+
+    <bean id="methodInterceptor" class="org.springframework.aop.GenericInterceptor">
+        <property name="beforeAdvice" ref="beforeAdvice"/>
+    </bean>
+    <bean id="beforeAdvice" class="org.springframework.test.common.LoveUServiceBeforeAdvice"/>
+</beans>
+```
+
+```java
+public interface LoveUService {
+  void explode();
+
+  String explodeReturn();
+}
+
+public class LoveUServiceImpl implements LoveUService {
+  @Override
+  public void explode() {
+    System.out.println("I Am Missing");
+  }
+
+  @Override
+  public String explodeReturn() {
+    return "I Love U";
+  }
+}
+
+public class LoveUServiceBeforeAdvice implements BeforeAdvice {
+  @Override
+  public void before(Method method, Object[] args, Object target) throws Throwable {
+    System.out.println("BeforeAdvice: do something before the earth explodes");
+  }
+}
+
+```
+
+
+
+```java
+public class AopIntoBeanLifecycleTest {
+  @Test
+  public void testAutoProxy() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-aop-into-bean-lifecycle.xml");
+
+    // 获取代理对象
+    LoveUService loveUService = applicationContext.getBean("loveUService", LoveUService.class);
+    loveUService.explode();
+  }
+}
+```
+
 ### R
+
+本章节的内容拆分了好几个小节
+
+1. 复习上一节的代理操作，以及 JDK 动态代理和 cglib 代理两种方式
+2. 通过实现 AOP 代理工厂，来简化创建代理对象的操作
+3. 细化各种通知（advice）来增强 joinpoint（织入点）的逻辑，比如 beforeAdvice, afterAdvice, afterReturningAdvice 等
+4. 将 pointcut 和 advice 结合起来，创建出 advisor，这是一个将 pointcut 和 advice 关联起来的类。使用起来只需要放入对应的 advice 和切点表达式便可形成一个 advisor，即完成一个增强点。
+5. 定义 DefaultAdvisorAutoProxyCreator 类并实现 InstantiationAwareBeanPostProcessor，目的是让 DefaultAdvisorAutoProxyCreator 类具有在应用上下文中扫描 advisor，并根据切点表达式创建出对应的代理对象。在 AbstractAutowireCapableBeanFactory#createBean() 中，先行判断 **是否返回代理对象**，让 aop 自动代理操作融入了 bean 对象的生命管理周期中。
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202411092248784.png"/>
+
+<p style="text-align:center"> <a href="https://github.com/DerekYRC/mini-spring/blob/main/changelog.md#"> 图片来自：mini-spring </a> </p>
