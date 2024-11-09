@@ -2116,7 +2116,47 @@ AfterReturningAdvice: do something after the earth explodes return
 
 
 
-### T3-将 AOP 嵌入 bean 的生命管理周期
+定义出 `Advisor` 类和 `PointcutAdvisor` 类，其实 `PointcutAdvisor` 类就是将 Pointcut 和 Advice 结合起来。
+
+```java
+public interface Advisor {
+  Advice getAdvice();
+}
+
+ public interface PointcutAdvisor extends Advisor {
+  Pointcut getPointcut();
+}
+```
+
+
+
+```java
+@Test
+public void test_advisor() throws Exception {
+  LoveUService loveUService = new LoveUServiceImpl();
+  // Advisor是Pointcut和Advice的组合
+  AspectJExpressionPointcutAdvisor advisor = new AspectJExpressionPointcutAdvisor();
+  advisor.setExpression("execution(* org.springframework.test.service.LoveUService.explode(..))");
+  GenericInterceptor methodInterceptor = new GenericInterceptor();
+  methodInterceptor.setBeforeAdvice(new LoveUServiceBeforeAdvice());
+  advisor.setAdvice(methodInterceptor);
+
+  AdvisedSupport advisedSupport = new AdvisedSupport();
+  TargetSource targetSource = new TargetSource(loveUService);
+  advisedSupport.setTargetSource(targetSource);
+  advisedSupport.setMethodInterceptor((MethodInterceptor) advisor.getAdvice());
+  advisedSupport.setMethodMatcher(advisor.getPointcut().getMethodMatcher());
+  //			advisedSupport.setProxyTargetClass(true);   //JDK or CGLIB
+
+  LoveUService proxy = (LoveUService) new ProxyFactory(advisedSupport).getProxy();
+  proxy.explode();
+}
+```
+
+- `PointcutAdvisor` 负责将 `Pointcut` 和 `Advice` 进行关联。
+- 在满足条件时应用 `Advice`，实现动态、条件性的 AOP 功能。
+
+### T4-将 AOP 嵌入 bean 的生命管理周期
 
 本节目标是通过 `BeanPostProcessor` 把动态代理融入到 Bean 的生命周期中，以及如何组装各项切点、拦截、前置的功能和适配对应的代理器。
 
