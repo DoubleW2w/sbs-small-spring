@@ -25,13 +25,23 @@ public class CglibAopProxy implements AopProxy {
     this.advised = advised;
   }
 
+  /**
+   * 获取代理对象
+   *
+   * <p>通过cglib库创建一个代理对象，该对象可以是目标类的子类
+   */
   @Override
   public Object getProxy() {
     Enhancer enhancer = new Enhancer();
+    // 获取目标对象的类
     Class<?> aClass = advised.getTargetSource().getTarget().getClass();
+    // 如果是CGLIB代理类，就获取父类，否则直接使用目标类
     aClass = ClassUtils.isCglibProxyClass(aClass) ? aClass.getSuperclass() : aClass;
+    // 设置Enhancer对象的父类
     enhancer.setSuperclass(aClass);
+    // 设置代理类实现的接口
     enhancer.setInterfaces(advised.getTargetSource().getTargetClass());
+    // 设置代理类的回调方法，用于处理代理类的方法调用
     enhancer.setCallback(new DynamicAdvisedInterceptor(advised));
     return enhancer.create();
   }
