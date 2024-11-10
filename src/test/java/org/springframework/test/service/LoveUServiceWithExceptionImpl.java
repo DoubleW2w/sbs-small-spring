@@ -6,6 +6,9 @@ package org.springframework.test.service;
  * @project: sbs-small-spring
  */
 public class LoveUServiceWithExceptionImpl implements LoveUService {
+
+  private String name;
+
   @Override
   public void explode() {
     System.out.println("I Am Missing");
@@ -15,5 +18,14 @@ public class LoveUServiceWithExceptionImpl implements LoveUService {
   @Override
   public String explodeReturn() {
     return null;
+  }
+
+  @Override
+  public String getName() {
+    return name;
+  }
+
+  public void setName(String name) {
+    this.name = name;
   }
 }

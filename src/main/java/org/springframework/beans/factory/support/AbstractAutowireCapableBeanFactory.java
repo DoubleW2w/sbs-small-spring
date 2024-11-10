@@ -23,7 +23,7 @@ import java.lang.reflect.Method;
 public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
     implements AutowireCapableBeanFactory {
   @Setter @Getter
-  private InstantiationStrategy instantiationStrategy = new SimpleInstantiationStrategy();
+  private InstantiationStrategy instantiationStrategy = new CglibSubclassingInstantiationStrategy();
 
   @Override
   protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
@@ -35,9 +35,16 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
       if (null != bean) {
         return bean;
       }
+      // 实例化 Bean
       bean = createBeanInstance(beanDefinition, beanName, args);
-      // 在设置bean属性之前，允许BeanPostProcessor修改属性值
-      applyBeanPostprocessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
+      // 实例化后判断
+      boolean continueWithPropertyPopulation =
+          applyBeanPostProcessorsAfterInstantiation(beanName, bean);
+      if (!continueWithPropertyPopulation) {
+        return bean;
+      }
+      // 在设置 Bean 属性之前，允许 BeanPostProcessor 修改属性值
+      applyBeanPostProcessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
       // 给 Bean 填充属性
       applyPropertyValues(beanName, bean, beanDefinition);
       // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
@@ -48,21 +55,32 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 
     // 注册实现了 DisposableBean 接口的 Bean 对象
     registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+
     // 判断 SCOPE_SINGLETON、SCOPE_PROTOTYPE
     if (beanDefinition.isSingleton()) {
-      addSingleton(beanName, bean);
+      registerSingleton(beanName, bean);
     }
     return bean;
   }
 
-  /**
-   * 在设置bean属性之前，允许BeanPostProcessor修改属性值
-   *
-   * @param beanName bean名称
-   * @param bean bean对象
-   * @param beanDefinition bean定义
-   */
-  protected void applyBeanPostprocessorsBeforeApplyingPropertyValues(
+  /** Bean 实例化后对于返回 false 的对象，不在执行后续设置 Bean 对象属性的操作 */
+  private boolean applyBeanPostProcessorsAfterInstantiation(String beanName, Object bean) {
+    boolean continueWithPropertyPopulation = true;
+    for (BeanPostProcessor beanPostProcessor : getBeanPostProcessors()) {
+      if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {
+        InstantiationAwareBeanPostProcessor instantiationAwareBeanPostProcessor =
+            (InstantiationAwareBeanPostProcessor) beanPostProcessor;
+        if (!instantiationAwareBeanPostProcessor.postProcessAfterInstantiation(bean, beanName)) {
+          continueWithPropertyPopulation = false;
+          break;
+        }
+      }
+    }
+    return continueWithPropertyPopulation;
+  }
+
+  /** 在设置 Bean 属性之前，允许 BeanPostProcessor 修改属性值 */
+  protected void applyBeanPostProcessorsBeforeApplyingPropertyValues(
       String beanName, Object bean, BeanDefinition beanDefinition) {
     for (BeanPostProcessor beanPostProcessor : getBeanPostProcessors()) {
       if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {

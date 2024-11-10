@@ -2945,3 +2945,260 @@ public class Person {
 ### R
 
 我们只需要把我们的实现融入到一个已经细分好的 Bean 生命周期中。你会发现它的设计是如此的好，可以让你在任何初始化的时间点上，任何面上，都能做你需要的扩展。
+
+## 给代理对象设置属性
+
+> 代码分支:[properties-setter-proxy-object](https://github.com/DoubleW2w/sbs-small-spring/tree/properties-setter-proxy-object)
+
+本章节要实现的是**给代理对象中的属性填充相对应的值**。
+
+之前的情况是在 `DefaultAdvisorAutoProxyCreator#postProcessBeforeInstantiation()` 完成代理对象的创建。
+
+根据下面的流程来看，在 `resolveBeforeInstantiation()` 方法中会去调用 `applyBeanPostProcessorsBeforeInstantiation()`，最终会走 `InstantiationAwareBeanPostProcessor#postProcessBeforeInstantiation()`，而该方法如果返回非null，会导致"短路"，不会执行后面的设置属性逻辑。因此如果该方法中返回代理bean后，不会为代理bean设置属性。
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory implements AutowireCapableBeanFactory {
+
+  @Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args) throws BeansException {
+    Object bean = null;
+    try {
+      // 判断是否返回代理 Bean 对象
+      bean = resolveBeforeInstantiation(beanName, beanDefinition);
+      if (null != bean) {
+        return bean;
+      }
+      // 实例化 Bean
+      bean = createBeanInstance(beanDefinition, beanName, args);
+      // 在设置 Bean 属性之前，允许 BeanPostProcessor 修改属性值
+      applyBeanPostProcessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
+      // 给 Bean 填充属性
+      applyPropertyValues(beanName, bean, beanDefinition);
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+
+    // 注册实现了 DisposableBean 接口的 Bean 对象
+    registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+
+    // 判断 SCOPE_SINGLETON、SCOPE_PROTOTYPE
+    if (beanDefinition.isSingleton()) {
+      addSingleton(beanName, bean);
+    }
+    return bean;
+  }
+
+  protected Object resolveBeforeInstantiation(String beanName, BeanDefinition beanDefinition) {
+    Object bean = applyBeanPostProcessorsBeforeInstantiation(beanDefinition.getBeanClass(), beanName);
+    if (null != bean) {
+      bean = applyBeanPostProcessorsAfterInitialization(bean, beanName);
+    }
+    return bean;
+  }
+
+  protected Object applyBeanPostProcessorsBeforeInstantiation(Class<?> beanClass, String beanName) {
+    for (BeanPostProcessor beanPostProcessor : getBeanPostProcessors()) {
+      if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {
+        Object result = ((InstantiationAwareBeanPostProcessor) beanPostProcessor).postProcessBeforeInstantiation(beanClass, beanName);
+        if (null != result) return result;
+      }
+    }
+    return null;
+  }
+}
+```
+
+所以**需要把创建代理对象的逻辑迁移到 Bean 对象执行初始化方法之后，在执行代理对象的创建。**
+
+也就是把`DefaultAdvisorAutoProxyCreator#postProcessBeforeInstantiation`的内容迁移到`DefaultAdvisorAutoProxyCreator#postProcessAfterInitialization`中。
+
+```java
+public class TargetSource {
+
+    private final Object target;
+
+    /**
+     * Return the type of targets returned by this {@link TargetSource}.
+     * <p>Can return <code>null</code>, although certain usages of a
+     * <code>TargetSource</code> might just work with a predetermined
+     * target class.
+     *
+     * @return the type of targets returned by this {@link TargetSource}
+     */
+    public Class<?>[] getTargetClass() {
+        Class<?> clazz = this.target.getClass();
+        clazz = ClassUtils.isCglibProxyClass(clazz) ? clazz.getSuperclass() : clazz;
+        return clazz.getInterfaces();
+    }
+
+}
+```
+
+```java
+public class DefaultAdvisorAutoProxyCreator implements InstantiationAwareBeanPostProcessor, BeanFactoryAware {
+
+  private DefaultListableBeanFactory beanFactory;
+
+  @Override
+  public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+    return null;
+  }
+
+  @Override
+  public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+
+    if (isInfrastructureClass(bean.getClass())) return bean;
+
+    Collection<AspectJExpressionPointcutAdvisor> advisors = beanFactory.getBeansOfType(AspectJExpressionPointcutAdvisor.class).values();
+
+    for (AspectJExpressionPointcutAdvisor advisor : advisors) {
+      ClassFilter classFilter = advisor.getPointcut().getClassFilter();
+      // 过滤匹配类
+      if (!classFilter.matches(bean.getClass())) continue;
+
+      AdvisedSupport advisedSupport = new AdvisedSupport();
+
+      TargetSource targetSource = new TargetSource(bean);
+      advisedSupport.setTargetSource(targetSource);
+      advisedSupport.setMethodInterceptor((MethodInterceptor) advisor.getAdvice());
+      advisedSupport.setMethodMatcher(advisor.getPointcut().getMethodMatcher());
+      advisedSupport.setProxyTargetClass(false);
+
+      // 返回代理对象
+      return new ProxyFactory(advisedSupport).getProxy();
+    }
+
+    return bean;
+  }  
+
+}
+```
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory implements AutowireCapableBeanFactory {
+
+  private InstantiationStrategy instantiationStrategy = new CglibSubclassingInstantiationStrategy();
+
+  @Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args) throws BeansException {
+    Object bean = null;
+    try {
+      // ...
+
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+    // ...
+    return bean;
+  }
+
+  private Object initializeBean(String beanName, Object bean, BeanDefinition beanDefinition) {
+
+    // ...
+
+    wrappedBean = applyBeanPostProcessorsAfterInitialization(bean, beanName);
+    return wrappedBean;
+  }
+
+  @Override
+  public Object applyBeanPostProcessorsAfterInitialization(Object existingBean, String beanName) throws BeansException {
+    Object result = existingBean;
+    for (BeanPostProcessor processor : getBeanPostProcessors()) {
+      Object current = processor.postProcessAfterInitialization(result, beanName);
+      if (null == current) return result;
+      result = current;
+    }
+    return result;
+  }
+
+}
+
+```
+
+测试
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <bean id="loveUService" class="org.springframework.test.service.LoveUServiceImpl">
+        <property name="name" value="earth"/>
+    </bean>
+
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/>
+    <bean id="beforeAdvice" class="org.springframework.test.common.LoveUServiceBeforeAdvice"/>
+
+    <bean id="methodInterceptor" class="org.springframework.aop.GenericInterceptor">
+        <property name="beforeAdvice" ref="beforeAdvice"/>
+    </bean>
+    <bean id="pointcutAdvisor"
+          class="org.springframework.aop.aspectj.AspectJExpressionPointcutAdvisor">
+        <property name="expression"
+                  value="execution(* org.springframework.test.service.LoveUService.*(..))"/>
+        <property name="advice" ref="methodInterceptor"/>
+    </bean>
+</beans>
+```
+
+```java
+public class PropertiesSetterProxyObjectTest {
+  @Test
+  public void testPopulateProxyBeanWithPropertyValues() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext(
+            "classpath:properties-setter-proxy-object-1.xml");
+
+    // 获取代理对象
+    LoveUService loveUService = (LoveUService) applicationContext.getBean("loveUService", LoveUService.class);
+    loveUService.explode();
+    assertThat(loveUService.getName()).isEqualTo("earth");
+  }
+}
+```
+
+```java
+public interface LoveUService {
+  void explode();
+
+  String explodeReturn();
+
+  String getName();
+}
+
+public class LoveUServiceImpl implements LoveUService {
+
+  private String name;
+  @Override
+  public void explode() {
+    System.out.println("I Am Missing");
+  }
+
+  @Override
+  public String explodeReturn() {
+    return "I Love U";
+  }
+
+  @Override
+  public String getName() {
+    return name;
+  }
+
+  public void setName(String name) {
+    this.name = name;
+  }
+}
+```
+
+<img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202411110053079.png"/>
+
+<p style="text-align:center"> <a href="https://github.com/DerekYRC/mini-spring/blob/main/changelog.md#"> 图片来自：mini-spring </a> </p>

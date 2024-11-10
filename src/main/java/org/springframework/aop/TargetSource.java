@@ -1,5 +1,7 @@
 package org.springframework.aop;
 
+import org.springframework.beans.util.ClassUtils;
+
 /**
  * 被代理的目标对象
  *
@@ -21,7 +23,9 @@ public class TargetSource {
    * @return 目标对象实现的接口的Class对象数组
    */
   public Class<?>[] getTargetClass() {
-    return this.target.getClass().getInterfaces();
+    Class<?> clazz = this.target.getClass();
+    clazz = ClassUtils.isCglibProxyClass(clazz) ? clazz.getSuperclass() : clazz;
+    return clazz.getInterfaces();
   }
 
   /**

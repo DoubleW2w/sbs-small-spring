@@ -9,4 +9,6 @@ public interface LoveUService {
   void explode();
 
   String explodeReturn();
+
+  String getName();
 }

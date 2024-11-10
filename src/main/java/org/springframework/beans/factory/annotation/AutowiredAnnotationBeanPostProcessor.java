@@ -7,6 +7,7 @@ import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
+import org.springframework.beans.util.ClassUtils;
 
 import java.lang.reflect.Field;
 
@@ -32,8 +33,9 @@ public class AutowiredAnnotationBeanPostProcessor
       throws BeansException {
     // 处理@Value注解
     Class<?> clazz = bean.getClass();
-    Field[] fields = clazz.getDeclaredFields();
-    for (Field field : fields) {
+    clazz = ClassUtils.isCglibProxyClass(clazz) ? clazz.getSuperclass() : clazz;
+    Field[] declaredFields = clazz.getDeclaredFields();
+    for (Field field : declaredFields) {
       Value valueAnnotation = field.getAnnotation(Value.class);
       if (valueAnnotation != null) {
         String value = valueAnnotation.value();
@@ -41,15 +43,16 @@ public class AutowiredAnnotationBeanPostProcessor
         BeanUtil.setFieldValue(bean, field.getName(), value);
       }
     }
-    // 处理@Autowired注解
-    for (Field field : fields) {
+
+    // 2. 处理注解 @Autowired
+    for (Field field : declaredFields) {
       Autowired autowiredAnnotation = field.getAnnotation(Autowired.class);
-      if (autowiredAnnotation != null) {
+      if (null != autowiredAnnotation) {
         Class<?> fieldType = field.getType();
         String dependentBeanName = null;
         Qualifier qualifierAnnotation = field.getAnnotation(Qualifier.class);
         Object dependentBean = null;
-        if (qualifierAnnotation != null) {
+        if (null != qualifierAnnotation) {
           dependentBeanName = qualifierAnnotation.value();
           dependentBean = beanFactory.getBean(dependentBeanName, fieldType);
         } else {
@@ -58,23 +61,29 @@ public class AutowiredAnnotationBeanPostProcessor
         BeanUtil.setFieldValue(bean, field.getName(), dependentBean);
       }
     }
+
     return pvs;
-  }
-
-  @Override
-  public Object postProcessBeforeInitialization(Object bean, String beanName)
-      throws BeansException {
-    return bean;
-  }
-
-  @Override
-  public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-    return bean;
   }
 
   @Override
   public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName)
       throws BeansException {
+    return null;
+  }
+
+  @Override
+  public boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+    return true;
+  }
+
+  @Override
+  public Object postProcessBeforeInitialization(Object bean, String beanName)
+      throws BeansException {
+    return null;
+  }
+
+  @Override
+  public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
     return null;
   }
 }
