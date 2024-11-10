@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.beans.PropertyValues;
 
+import java.util.Objects;
+
 /**
  * Bean定义
  *
@@ -50,5 +52,18 @@ public class BeanDefinition {
     this.scope = scope;
     this.singleton = SCOPE_SINGLETON.equalsIgnoreCase(scope);
     this.prototype = SCOPE_PROTOTYPE.equalsIgnoreCase(scope);
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    BeanDefinition that = (BeanDefinition) o;
+    return beanClass.equals(that.beanClass);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(beanClass);
   }
 }

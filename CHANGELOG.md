@@ -2367,6 +2367,8 @@ public class AopIntoBeanLifecycleTest {
 
 ## 属性占位符+自动扫描 Bean 对象注册
 
+### 属性占位符
+
 我们知道 BeanFactoryPostProcessor 的作用是 **在所有的 BeanDefinition 加载完成之后，实例化 Bean 对象之前，可以提供修改 BeanDefinition 属性的机制**，其核心是在 `postProcessBeanFactory()` 方法中。
 
 因此我们可以结合 BeanFactoryPostProcessor 实现 `${token}` 给 Bean 对象注入进去属性信息。
@@ -2499,3 +2501,141 @@ name=yoah
 ```
 
 核心就是 **在 bean 实例化之前，编辑 BeanDefinition，解析 XML 文件中的占位符，然后用 properties 文件中的配置值替换占位符。**
+
+### 包扫描自动注册
+
+在 XmlBeanDefinitionReader 中解析 `<context:component-scan />` 标签，扫描类组装 BeanDefinition 然后注册到容器中的操作在 `ClassPathBeanDefinitionScanner#doScan` 中实现。
+
+```java
+public class XmlBeanDefinitionReader extends AbstractBeanDefinitionReader {
+  protected void doLoadBeanDefinitions(InputStream inputStream) throws ClassNotFoundException, DocumentException {
+    SAXReader reader = new SAXReader();
+    Document document = reader.read(inputStream);
+    Element root = document.getRootElement();
+
+    // 解析 context:component-scan 标签，扫描包中的类并提取相关信息，用于组装 BeanDefinition
+    Element componentScan = root.element("component-scan");
+    if (null != componentScan) {
+      String scanPath = componentScan.attributeValue("base-package");
+      if (StrUtil.isEmpty(scanPath)) {
+        throw new BeansException("The value of base-package attribute can not be empty or null");
+      }
+      // 扫描包路径
+      scanPackage(scanPath);
+    }
+
+    // 省略....
+  }
+
+  /**
+   * 扫描注解Component的类，提取信息，组装成BeanDefinition
+   *
+   * @param scanPath 扫描路径
+   */
+  private void scanPackage(String scanPath) {
+    String[] basePackages = StrUtil.splitToArray(scanPath, ',');
+    ClassPathBeanDefinitionScanner scanner = new ClassPathBeanDefinitionScanner(getRegistry());
+    scanner.doScan(basePackages);
+  }
+}
+```
+
+<p> </p>
+
+```java
+public class ClassPathScanningCandidateComponentProvider {
+  public Set<BeanDefinition> findCandidateComponents(String basePackage) {
+    Set<BeanDefinition> candidates = new LinkedHashSet<>();
+    // 扫描有org.springframework.stereotype.Component注解的类
+    Set<Class<?>> classes = ClassUtil.scanPackageByAnnotation(basePackage, Component.class);
+    for (Class<?> clazz : classes) {
+      BeanDefinition beanDefinition = new BeanDefinition(clazz);
+      candidates.add(beanDefinition);
+    }
+    return candidates;
+  }
+}
+```
+
+`ClassPathScanningCandidateComponentProvider` 类具有 **扫描类型并筛选出符合条件的类** 的职责
+
+
+
+```java
+public class ClassPathBeanDefinitionScanner extends ClassPathScanningCandidateComponentProvider {
+
+  private BeanDefinitionRegistry registry;
+
+  public ClassPathBeanDefinitionScanner(BeanDefinitionRegistry registry) {
+    this.registry = registry;
+  }
+
+  /**
+   * 扫描类路径的某个包
+   *
+   * @param basePackages 包路径
+   */
+  public void doScan(String... basePackages) {
+    for (String basePackage : basePackages) {
+      // 寻找Component注解的类的bean定义
+      Set<BeanDefinition> candidates = findCandidateComponents(basePackage);
+      for (BeanDefinition candidate : candidates) {
+        // 解析bean的作用域
+        String beanScope = resolveBeanScope(candidate);
+        if (StrUtil.isNotEmpty(beanScope)) {
+          candidate.setScope(beanScope);
+        }
+        // 生成bean的名称
+        String beanName = determineBeanName(candidate);
+        // 注册BeanDefinition
+        registry.registerBeanDefinition(beanName, candidate);
+      }
+    }
+  }
+}
+```
+
+- `ClassPathBeanDefinitionScanner` 类通过 `ClassPathScanningCandidateComponentProvider` 获取到所有符合条件的候选类
+- 解析候选类有没有 `@Scope` 注解，并设置 bean 的作用域
+- 解析 bean 名称是来自注解还是默认生成
+- 调用 `BeanDefinitionRegistry` 的注册 bena 定义的能力
+
+测试类
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <context:component-scan base-package="org.springframework.test.bean"/>
+
+</beans>
+```
+
+```java
+@Component
+@Data
+@ToString
+public class Car {
+  private String brand;
+  private String name;
+}
+```
+
+```java
+  @Test
+  public void test_packageScan() throws Exception {
+    ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:spring-auto-scan-object-register-2.xml");
+    Car car = applicationContext.getBean("car", Car.class);
+    assertThat(car).isNotNull();
+  }
+```
+
+### 总结
+
+学习到这里，我们要明白一点：其实Spring的扩展内容，是基于Bean的生命周期来进行嵌入。

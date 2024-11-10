@@ -20,4 +20,11 @@ public class AutoScanBeanObjectRegisterTest {
     Car car = applicationContext.getBean("car", Car.class);
     assertThat(car.getBrand()).isEqualTo("bmw");
   }
+
+  @Test
+  public void test_packageScan() throws Exception {
+    ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:spring-auto-scan-object-register-2.xml");
+    Car car = applicationContext.getBean("car", Car.class);
+    assertThat(car).isNotNull();
+  }
 }
