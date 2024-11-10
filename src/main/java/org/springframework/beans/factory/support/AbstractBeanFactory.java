@@ -1,15 +1,14 @@
 package org.springframework.beans.factory.support;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.beans.util.ClassUtils;
-
-import java.util.ArrayList;
-import java.util.List;
+import org.springframework.beans.util.StringValueResolver;
 
 /**
  * Bean工厂的积累
@@ -26,6 +25,8 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport
 
   /** BeanPostProcessors to apply in createBean */
   private final List<BeanPostProcessor> beanPostProcessors = new ArrayList<>();
+
+  private final List<StringValueResolver> embeddedValueResolvers = new ArrayList<>();
 
   @Override
   public Object getBean(String name) throws BeansException {
@@ -90,5 +91,19 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport
 
   public ClassLoader getBeanClassLoader() {
     return this.beanClassLoader;
+  }
+
+  @Override
+  public void addEmbeddedValueResolver(StringValueResolver valueResolver) {
+    this.embeddedValueResolvers.add(valueResolver);
+  }
+
+  @Override
+  public String resolveEmbeddedValue(String value) {
+    String result = value;
+    for (StringValueResolver resolver : this.embeddedValueResolvers) {
+      result = resolver.resolveStringValue(result);
+    }
+    return result;
   }
 }

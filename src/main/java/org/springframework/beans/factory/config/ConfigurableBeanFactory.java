@@ -1,6 +1,7 @@
 package org.springframework.beans.factory.config;
 
 import org.springframework.beans.factory.HierarchicalBeanFactory;
+import org.springframework.beans.util.StringValueResolver;
 
 /**
  * 与Bean的作用域（Scope）、生命周期回调、依赖注入等相关的功能
@@ -22,4 +23,20 @@ public interface ConfigurableBeanFactory extends HierarchicalBeanFactory, Single
 
   /** 销毁单例对象 */
   void destroySingletons();
+
+  /**
+   * 为嵌入值添加字符串解析器
+   *
+   * @param valueResolver 字符串解析器
+   * @since 3.0
+   */
+  void addEmbeddedValueResolver(StringValueResolver valueResolver);
+
+  /**
+   * 解析嵌入的值，比如注解属性
+   *
+   * @param value 待解析的值
+   * @since 3.0
+   */
+  String resolveEmbeddedValue(String value);
 }

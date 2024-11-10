@@ -10,11 +10,11 @@ import org.springframework.beans.BeansException;
  */
 public interface BeanPostProcessor {
   /**
-   * 在bean执行初始化方法之前执行此方法
+   * 在 Bean 初始化之前执行，即在 Bean 已实例化、属性已设置并调用了 Aware 接口方法后，但在调用 init 方法（或初始化回调）之前。
    *
-   * @param bean
-   * @param beanName
-   * @return
+   * @param bean bean对象
+   * @param beanName bean名称
+   * @return bean对象
    * @throws BeansException
    */
   Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException;

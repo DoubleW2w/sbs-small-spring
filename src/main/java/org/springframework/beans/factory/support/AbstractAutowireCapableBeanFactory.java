@@ -23,7 +23,7 @@ import java.lang.reflect.Method;
 public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
     implements AutowireCapableBeanFactory {
   @Setter @Getter
-  private InstantiationStrategy instantiationStrategy = new CglibSubclassingInstantiationStrategy();
+  private InstantiationStrategy instantiationStrategy = new SimpleInstantiationStrategy();
 
   @Override
   protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
@@ -36,6 +36,8 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
         return bean;
       }
       bean = createBeanInstance(beanDefinition, beanName, args);
+      // 在设置bean属性之前，允许BeanPostProcessor修改属性值
+      applyBeanPostprocessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
       // 给 Bean 填充属性
       applyPropertyValues(beanName, bean, beanDefinition);
       // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
@@ -51,6 +53,31 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
       addSingleton(beanName, bean);
     }
     return bean;
+  }
+
+  /**
+   * 在设置bean属性之前，允许BeanPostProcessor修改属性值
+   *
+   * @param beanName bean名称
+   * @param bean bean对象
+   * @param beanDefinition bean定义
+   */
+  protected void applyBeanPostprocessorsBeforeApplyingPropertyValues(
+      String beanName, Object bean, BeanDefinition beanDefinition) {
+    for (BeanPostProcessor beanPostProcessor : getBeanPostProcessors()) {
+      if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {
+        // 解析注解属性
+        PropertyValues pvs =
+            ((InstantiationAwareBeanPostProcessor) beanPostProcessor)
+                .postProcessPropertyValues(beanDefinition.getPropertyValues(), bean, beanName);
+        // 放进bean定义的属性列表中
+        if (pvs != null) {
+          for (PropertyValue propertyValue : pvs.getPropertyValues()) {
+            beanDefinition.getPropertyValues().addPropertyValue(propertyValue);
+          }
+        }
+      }
+    }
   }
 
   /**

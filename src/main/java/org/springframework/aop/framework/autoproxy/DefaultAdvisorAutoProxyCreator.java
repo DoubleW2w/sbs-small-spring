@@ -1,18 +1,17 @@
 package org.springframework.aop.framework.autoproxy;
 
+import java.util.Collection;
 import org.aopalliance.aop.Advice;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.springframework.aop.*;
 import org.springframework.aop.aspectj.AspectJExpressionPointcutAdvisor;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.PropertyValues;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
-import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
-
-import java.util.Collection;
 
 /**
  * 职责：在应用上下文中扫描 Advisor，并根据配置条件自动为目标 Bean 创建代理，以应用 AOP 切面。
@@ -77,6 +76,12 @@ public class DefaultAdvisorAutoProxyCreator
     }
 
     return null;
+  }
+
+
+  @Override
+  public PropertyValues postProcessPropertyValues(PropertyValues pvs, Object bean, String beanName) throws BeansException {
+    return pvs;
   }
 
   /**

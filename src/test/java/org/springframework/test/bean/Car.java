@@ -2,9 +2,8 @@ package org.springframework.test.bean;
 
 import lombok.Data;
 import lombok.ToString;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-
-import java.util.StringJoiner;
 
 /**
  * @author: DoubleW2w
@@ -15,6 +14,9 @@ import java.util.StringJoiner;
 @Data
 @ToString
 public class Car {
+  @Value(value = "${brand}")
   private String brand;
+
+  @Value(value = "${name}")
   private String name;
 }

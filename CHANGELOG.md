@@ -1897,6 +1897,8 @@ public void test_cglibDynamic() throws Exception {
 
 ## AOP 代理工厂将 AOP 扩展到 Bean 的生命周期
 
+> 代码分支: [aop-into-bean-lifecycle](https://github.com/DoubleW2w/sbs-small-spring/tree/aop-into-bean-lifecycle)
+
 ### S
 
 在 [上一章节](#基于 JDK、Cglib 实现 AOP) 中，已经实现了切点表达式、以及通过 JDK 动态代理和 Cglib 代理的方式实现简单的 AOP 功能。
@@ -2367,6 +2369,8 @@ public class AopIntoBeanLifecycleTest {
 
 ## 属性占位符+自动扫描 Bean 对象注册
 
+> 代码分支: [auto-scan-bean-object-register](https://github.com/DoubleW2w/sbs-small-spring/tree/auto-scan-bean-object-register)
+
 ### 属性占位符
 
 我们知道 BeanFactoryPostProcessor 的作用是 **在所有的 BeanDefinition 加载完成之后，实例化 Bean 对象之前，可以提供修改 BeanDefinition 属性的机制**，其核心是在 `postProcessBeanFactory()` 方法中。
@@ -2638,4 +2642,222 @@ public class Car {
 
 ### 总结
 
-学习到这里，我们要明白一点：其实Spring的扩展内容，是基于Bean的生命周期来进行嵌入。
+学习到这里，我们要明白一点：其实 Spring 的扩展内容，是基于 Bean 的生命周期来进行嵌入。
+
+## 通过注解注入属性信息
+
+> 代码分支: [annotation-inject-properties](https://github.com/DoubleW2w/sbs-small-spring/tree/annotation-inject-properties)
+
+### S
+
+通过 [属性占位符+自动扫描 Bean 对象注册](#属性占位符+自动扫描 Bean 对象注册) 我们完成了自动扫描包，注册 Bean 对象，并且通过配置 `${name}` 这样的方式完成属性注入。
+
+### T
+
+本节目标就是实现 `@Autowired`、`@Value` 注解，完成对属性和对象的注入操作。
+
+- 修改 Bean 的定义要用到 `BeanFactoryPostProcessor`
+- 处理 Bean 的属性要用到 `BeanPostProcessor`
+- 要处理自动扫描注入，包括属性注入、对象注入，则需要在对象属性 `applyPropertyValues` 填充之前 ，把属性信息写入到 PropertyValues 的集合中去。
+
+### A1-value 注解
+
+value 注解定义, 该注解可以放在字段，方法，参数上，但在解析的时候，我们只针对了字段上。
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER})
+public @interface Value {
+  String value();
+}
+```
+
+假设我们定义了 bean 类如下
+
+```java
+@Component
+@Data
+@ToString
+public class Car {
+  @Value(value = "${brand}")
+  private String brand;
+
+  @Value(value = "${name}")
+  private String name;
+}
+```
+
+```properties
+brand=bmw
+name=yoah
+```
+
+为了达到这个注解能够注入属性信息，可以分为最简单的几步：1.加载 properties 文件、2.在实例化 Bean 的时候，遍历字段并解析 `@Value` 注解、3.获取到里面的属性信息，并最终设置字段的值。
+
+<span style="text-emphasis:filled red;"> 加载 Properties 文件 </span> 的职责交给了 `PropertyPlaceholderConfigurer` 类，由于该类实现了 `BeanFactoryPostProcessor`，因此 **在所有 beanDefinition 加载完成之后，在 bean 实例化之前，就会执行加载属性配置文件、属性值替换占位符以及往容器里添加字符串解析器**
+
+```java
+public class PropertyPlaceholderConfigurer implements BeanFactoryPostProcessor {
+ 
+@Override
+  public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory)
+      throws BeansException {
+    // 加载属性配置文件
+    Properties properties = loadProperties();
+
+    // 属性值替换占位符
+    processProperties(beanFactory, properties);
+
+    // 往容器中添加字符解析器，供解析@Value注解使用
+    StringValueResolver valueResolver = new PlaceholderResolvingStringValueResolver(properties);
+    beanFactory.addEmbeddedValueResolver(valueResolver);
+  }
+}
+```
+
+而遍历字段并解析 `@Value` 注解的职责，获取到里面的属性并完成设置的操作的职责是交给了 `AutowiredAnnotationBeanPostProcessor`，在 `postProcessPropertyValues()` 负责处理注解。此步骤出发是在 Bean 实例化之后，但在设置属性之前执行。
+
+```java
+public class AutowiredAnnotationBeanPostProcessor
+    implements InstantiationAwareBeanPostProcessor, BeanFactoryAware {
+
+  private ConfigurableListableBeanFactory beanFactory;
+
+  @Override
+  public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+    this.beanFactory = (ConfigurableListableBeanFactory) beanFactory;
+  }
+
+  @Override
+  public PropertyValues postProcessPropertyValues(PropertyValues pvs, Object bean, String beanName)
+      throws BeansException {
+    // 处理@Value注解
+    Class<?> clazz = bean.getClass();
+    Field[] fields = clazz.getDeclaredFields();
+    for (Field field : fields) {
+      Value valueAnnotation = field.getAnnotation(Value.class);
+      if (valueAnnotation != null) {
+        String value = valueAnnotation.value();
+        value = beanFactory.resolveEmbeddedValue(value);
+        BeanUtil.setFieldValue(bean, field.getName(), value);
+      }
+    }
+    // todo：处理@autowired注解
+    return pvs;
+  }
+
+  @Override
+  public Object postProcessBeforeInitialization(Object bean, String beanName)
+      throws BeansException {
+    return bean;
+  }
+
+  @Override
+  public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+    return bean;
+  }
+
+  @Override
+  public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName)
+      throws BeansException {
+    return null;
+  }
+}
+```
+
+而上面的步骤，要放在bean的生命管理周期中
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
+    implements AutowireCapableBeanFactory {  
+@Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
+      throws BeansException {
+    Object bean = null;
+    try {
+      // 判断是否返回代理 Bean 对象
+      bean = resolveBeforeInstantiation(beanName, beanDefinition);
+      if (null != bean) {
+        return bean;
+      }
+      bean = createBeanInstance(beanDefinition, beanName, args);
+      
+      // 在设置bean属性之前，允许BeanPostProcessor修改属性值
+      applyBeanPostprocessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
+      // 在设置bean属性之前，允许BeanPostProcessor修改属性值
+      
+      // 给 Bean 填充属性
+      applyPropertyValues(beanName, bean, beanDefinition);
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+
+    // 注册实现了 DisposableBean 接口的 Bean 对象
+    registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+    // 判断 SCOPE_SINGLETON、SCOPE_PROTOTYPE
+    if (beanDefinition.isSingleton()) {
+      addSingleton(beanName, bean);
+    }
+    return bean;
+  }
+}
+```
+
+测试类
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <bean class="org.springframework.beans.factory.PropertyPlaceholderConfigurer">
+        <property name="location" value="classpath:car.properties" />
+    </bean>
+
+    <context:component-scan base-package="org.springframework.test.bean"/>
+</beans>
+```
+
+```java
+@Component
+@Data
+@ToString
+public class Car {
+  @Value(value = "${brand}")
+  private String brand;
+
+  @Value(value = "${name}")
+  private String name;
+}
+```
+
+```java
+public class AnnotationInjectPropertiesTest {
+  @Test
+  public void test_valueAnnotation() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-annotation-inject-properties-1.xml");
+
+    Car car = applicationContext.getBean("car", Car.class);
+    assertThat(car).isNotNull();
+    assertThat(car.getBrand()).isEqualTo("bmw");
+  }
+}
+```
+
+
+
+### A2-Autowired注解
+
+### R
+
+
+
+使用反射实例化 bean 的时候，能看到真正的字段，而使用 cglib 来代理生成 bean 的时候，是看不到真正字段的，因此也判断不出注解。
