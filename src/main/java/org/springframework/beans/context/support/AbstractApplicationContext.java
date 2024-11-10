@@ -165,6 +165,11 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
   }
 
   @Override
+  public <T> T getBean(Class<T> requiredType) throws BeansException {
+    return getBeanFactory().getBean(requiredType);
+  }
+
+  @Override
   public void close() {
     // 发布容器关闭事件
     publishEvent(new ContextClosedEvent(this));

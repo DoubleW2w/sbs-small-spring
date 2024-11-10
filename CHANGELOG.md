@@ -2856,8 +2856,92 @@ public class AnnotationInjectPropertiesTest {
 
 ### A2-Autowired注解
 
+在 `AutowiredAnnotationBeanPostProcessor` 类补充对 autowired 注解的解析。
+
+```java
+public class AutowiredAnnotationBeanPostProcessor
+    implements InstantiationAwareBeanPostProcessor, BeanFactoryAware { 
+@Override
+  public PropertyValues postProcessPropertyValues(PropertyValues pvs, Object bean, String beanName)
+      throws BeansException {
+    // 处理@Value注解
+    Class<?> clazz = bean.getClass();
+    Field[] fields = clazz.getDeclaredFields();
+    for (Field field : fields) {
+      Value valueAnnotation = field.getAnnotation(Value.class);
+      if (valueAnnotation != null) {
+        String value = valueAnnotation.value();
+        value = beanFactory.resolveEmbeddedValue(value);
+        BeanUtil.setFieldValue(bean, field.getName(), value);
+      }
+    }
+    // 处理@Autowired注解
+    for (Field field : fields) {
+      Autowired autowiredAnnotation = field.getAnnotation(Autowired.class);
+      if (autowiredAnnotation != null) {
+        Class<?> fieldType = field.getType();
+        String dependentBeanName = null;
+        Qualifier qualifierAnnotation = field.getAnnotation(Qualifier.class);
+        Object dependentBean = null;
+        if (qualifierAnnotation != null) {
+          dependentBeanName = qualifierAnnotation.value();
+          dependentBean = beanFactory.getBean(dependentBeanName, fieldType);
+        } else {
+          dependentBean = beanFactory.getBean(fieldType);
+        }
+        BeanUtil.setFieldValue(bean, field.getName(), dependentBean);
+      }
+    }
+    return pvs;
+  }
+}
+```
+
+测试类
+
+```java
+  @Test
+  public void test_autowiredAnnotation() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-annotation-inject-properties-2.xml");
+
+    Person person = applicationContext.getBean(Person.class);
+    assertThat(person.getCar()).isNotNull();
+    assertThat(person.getCar().getBrand()).isEqualTo("bmw");
+  }
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <bean class="org.springframework.beans.factory.PropertyPlaceholderConfigurer">
+        <property name="location" value="classpath:car.properties" />
+    </bean>
+
+    <context:component-scan base-package="org.springframework.test.bean"/>
+</beans>
+```
+
+```java
+@Component
+@Data
+@ToString
+public class Person {
+  private String name;
+
+  @Autowired private Car car;
+}
+```
+
+
+
 ### R
 
-
-
-使用反射实例化 bean 的时候，能看到真正的字段，而使用 cglib 来代理生成 bean 的时候，是看不到真正字段的，因此也判断不出注解。
+我们只需要把我们的实现融入到一个已经细分好的 Bean 生命周期中。你会发现它的设计是如此的好，可以让你在任何初始化的时间点上，任何面上，都能做你需要的扩展。
