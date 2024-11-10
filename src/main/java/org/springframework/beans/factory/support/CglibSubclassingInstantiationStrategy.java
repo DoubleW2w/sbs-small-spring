@@ -19,7 +19,6 @@ public class CglibSubclassingInstantiationStrategy implements InstantiationStrat
   public Object instantiate(
       BeanDefinition beanDefinition, String beanName, Constructor ctor, Object[] args)
       throws BeansException {
-    System.out.println("beanName:[" + beanName + "] 使用cglib策略进行实例化");
     Enhancer enhancer = new Enhancer();
     enhancer.setSuperclass(beanDefinition.getBeanClass());
     enhancer.setCallback(

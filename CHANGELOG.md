@@ -2364,3 +2364,138 @@ public class AopIntoBeanLifecycleTest {
 <img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202411092248784.png"/>
 
 <p style="text-align:center"> <a href="https://github.com/DerekYRC/mini-spring/blob/main/changelog.md#"> 图片来自：mini-spring </a> </p>
+
+## 属性占位符+自动扫描 Bean 对象注册
+
+我们知道 BeanFactoryPostProcessor 的作用是 **在所有的 BeanDefinition 加载完成之后，实例化 Bean 对象之前，可以提供修改 BeanDefinition 属性的机制**，其核心是在 `postProcessBeanFactory()` 方法中。
+
+因此我们可以结合 BeanFactoryPostProcessor 实现 `${token}` 给 Bean 对象注入进去属性信息。
+
+```java
+public class PropertyPlaceholderConfigurer implements BeanFactoryPostProcessor {
+
+  public static final String PLACEHOLDER_PREFIX = "${";
+
+  public static final String PLACEHOLDER_SUFFIX = "}";
+
+  /** 配置文件路径 */
+  private String location;
+
+  @Override
+  public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory)
+      throws BeansException {
+    // 加载属性配置文件
+    Properties properties = loadProperties();
+
+    // 属性值替换占位符
+    processProperties(beanFactory, properties);
+  }
+
+  /**
+   * 加载属性配置文件
+   *
+   * @return
+   */
+  private Properties loadProperties() {
+    try {
+      DefaultResourceLoader resourceLoader = new DefaultResourceLoader();
+      Resource resource = resourceLoader.getResource(location);
+      Properties properties = new Properties();
+      properties.load(resource.getInputStream());
+      return properties;
+    } catch (Exception e) {
+      throw new BeansException("Could not load properties", e);
+    }
+  }
+
+  /**
+   * 属性值替换占位符
+   *
+   * @param beanFactory bean工厂
+   * @param properties 属性
+   * @throws BeansException bean异常
+   */
+  private void processProperties(ConfigurableListableBeanFactory beanFactory, Properties properties)
+      throws BeansException {
+    String[] beanDefinitionNames = beanFactory.getBeanDefinitionNames();
+    for (String beanName : beanDefinitionNames) {
+      BeanDefinition beanDefinition = beanFactory.getBeanDefinition(beanName);
+      resolvePropertyValues(beanDefinition, properties);
+    }
+  }
+
+  private void resolvePropertyValues(BeanDefinition beanDefinition, Properties properties) {
+    PropertyValues propertyValues = beanDefinition.getPropertyValues();
+    for (PropertyValue propertyValue : propertyValues.getPropertyValues()) {
+      // 属性占位符的值${xxx}
+      Object value = propertyValue.getValue();
+      if (!(value instanceof String)) continue;
+      // TODO 仅简单支持一个占位符的格式
+      String strVal = (String) value;
+      StringBuffer buf = new StringBuffer(strVal);
+      int startIndex = strVal.indexOf(PLACEHOLDER_PREFIX);
+      int endIndex = strVal.indexOf(PLACEHOLDER_SUFFIX);
+      if (startIndex != -1 && endIndex != -1 && startIndex < endIndex) {
+        String propKey = strVal.substring(startIndex + 2, endIndex); // 属性名称
+        String propVal = properties.getProperty(propKey); // 从配置属性获取属性值
+        buf.replace(startIndex, endIndex + 1, propVal);
+        propertyValues.addPropertyValue(new PropertyValue(propertyValue.getName(), buf.toString()));
+      }
+    }
+  }
+
+  public void setLocation(String location) {
+    this.location = location;
+  }
+}
+```
+
+测试类
+
+```java
+public class AutoScanBeanObjectRegisterTest {
+  @Test
+  public void test_propertyPlaceholderConfigurer() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-auto-scan-object-register-1.xml");
+
+    Car car = applicationContext.getBean("car", Car.class);
+    assertThat(car.getBrand()).isEqualTo("bmw");
+  }
+}
+
+@Data
+@ToString
+public class Car {
+  private String brand;
+  private String name;
+}
+```
+
+```properties
+brand=bmw
+name=yoah
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <bean class="org.springframework.beans.factory.PropertyPlaceholderConfigurer">
+        <property name="location" value="classpath:car.properties" />
+    </bean>
+
+    <bean id="car" class="org.springframework.test.bean.Car">
+        <property name="brand" value="${brand}" />
+        <property name="name" value="${name}"/>
+    </bean>
+</beans>
+```
+
+核心就是 **在 bean 实例化之前，编辑 BeanDefinition，解析 XML 文件中的占位符，然后用 properties 文件中的配置值替换占位符。**
