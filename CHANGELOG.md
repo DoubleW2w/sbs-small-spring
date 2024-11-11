@@ -3915,3 +3915,186 @@ public class B {
 ### 解决有代理对象的循环依赖问题
 
 解决有代理对象时的循环依赖问题，需要提前暴露代理对象的引用，而不是暴露实例化后的bean的引用，这样才能避免一个拿出来是代理对象，另一个拿出来是实例化好的对象。
+
+如果是工厂对象，则使用`getEarlyBeanReference ()` 提前将工厂对象放到三级缓存中，等到后续获取对象的时候实际拿到的是工厂对象中 getObject，这个才是最终的实际对象。
+
+在正常的流程中，getSingleton 从三个缓存中以此寻找对象，一级、二级如果有则直接取走，如果对象是三级缓存中则会从三级缓存中获取后并删掉工厂对象，把实际对象放到二级缓存中。
+
+```java
+public class DefaultSingletonBeanRegistry implements SingletonBeanRegistry {
+
+    // 一级缓存，普通对象
+    private Map<String, Object> singletonObjects = new ConcurrentHashMap<>();
+
+    // 二级缓存，提前暴漏对象，没有完全实例化的对象
+    protected final Map<String, Object> earlySingletonObjects = new HashMap<String, Object>();
+
+    // 三级缓存，存放代理对象
+    private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<String, ObjectFactory<?>>();
+
+    private final Map<String, DisposableBean> disposableBeans = new LinkedHashMap<>();
+
+    @Override
+    public Object getSingleton(String beanName) {
+        Object singletonObject = singletonObjects.get(beanName);
+        if (null == singletonObject) {
+            singletonObject = earlySingletonObjects.get(beanName);
+            // 判断二级缓存中是否有对象，这个对象就是代理对象，因为只有代理对象才会放到三级缓存中
+            if (null == singletonObject) {
+                ObjectFactory<?> singletonFactory = singletonFactories.get(beanName);
+                if (singletonFactory != null) {
+                    singletonObject = singletonFactory.getObject();
+                    // 把三级缓存中的代理对象中的真实对象获取出来，放入二级缓存中
+                    earlySingletonObjects.put(beanName, singletonObject);
+                    singletonFactories.remove(beanName);
+                }
+            }
+        }
+        return singletonObject;
+    }
+
+    public void registerSingleton(String beanName, Object singletonObject) {
+        singletonObjects.put(beanName, singletonObject);
+        earlySingletonObjects.remove(beanName);
+        singletonFactories.remove(beanName);
+    }
+
+    protected void addSingletonFactory(String beanName, ObjectFactory<?> singletonFactory){
+        if (!this.singletonObjects.containsKey(beanName)) {
+            this.singletonFactories.put(beanName, singletonFactory);
+            this.earlySingletonObjects.remove(beanName);
+        }
+    }
+
+    public void registerDisposableBean(String beanName, DisposableBean bean) {
+        disposableBeans.put(beanName, bean);
+    }
+
+}
+ 
+```
+
+- `singletonObjects`、`earlySingletonObjects`、`singletonFactories`，分别存放成品对象、半成品对象和工厂对象。
+- `getSingleton()`、`registerSingleton()`、`addSingletonFactory()`，这样使用方就可以分别在不同时间段存放和获取对应的对象了。
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
+    implements AutowireCapableBeanFactory {
+  // 省略...
+@Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
+      throws BeansException {
+    Object bean;
+    try {
+      // 判断是否返回代理 Bean 对象
+      bean = resolveBeforeInstantiation(beanName, beanDefinition);
+      if (null != bean) {
+        return bean;
+      }
+      // 实例化 Bean
+      bean = createBeanInstance(beanDefinition, beanName, args);
+      // 为解决循环依赖问题，将实例化后的bean放进缓存中提前暴露
+      if (beanDefinition.isSingleton()) {+++++++++++++++++++
+        Object finalBean = bean;
+        addSingletonFactory(
+            beanName,
+            () -> getEarlyBeanReference(beanName, beanDefinition, finalBean));
+      }
+      // 实例化后判断
+      boolean continueWithPropertyPopulation =
+          applyBeanPostProcessorsAfterInstantiation(beanName, bean);
+      if (!continueWithPropertyPopulation) {
+        return bean;
+      }
+      // 在设置 Bean 属性之前，允许 BeanPostProcessor 修改属性值
+      applyBeanPostProcessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
+      // 给 Bean 填充属性
+      applyPropertyValues(beanName, bean, beanDefinition);
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+
+    // 注册实现了 DisposableBean 接口的 Bean 对象
+    registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+
+    // 判断 SCOPE_SINGLETON、SCOPE_PROTOTYPE
+    Object exposedObject = bean; +++++++++++++++++++
+    if (beanDefinition.isSingleton()) {+++++++++++++++++++
+      // 如果有代理对象，此处获取代理对象 
+      exposedObject = getSingleton(beanName);+++++++++++++++++++
+      registerSingleton(beanName, exposedObject);+++++++++++++++++++
+    }
+    return exposedObject;
+  }
+  // 省略..
+}
+```
+
+
+
+在 DefaultAdvisorAutoProxyCreator 提供的切面服务中，也需要实现接口 InstantiationAwareBeanPostProcessor 新增的 getEarlyBeanReference 方法，便于把依赖的切面对象也能存放到三级缓存中，处理对应的循环依赖。
+
+```java
+public class DefaultAdvisorAutoProxyCreator
+    implements InstantiationAwareBeanPostProcessor, BeanFactoryAware {
+
+  private DefaultListableBeanFactory beanFactory;
+
+  private Set<Object> earlyProxyReferences = new HashSet<>();
+	
+  // 省略...
+
+  @Override
+  public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+    // 如果前期代理对象不存在
+    if (!earlyProxyReferences.contains(beanName)) {
+      return wrapIfNecessary(bean, beanName);
+    }
+    return bean;
+  }
+
+  @Override
+  public Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+    earlyProxyReferences.add(beanName);
+    return wrapIfNecessary(bean, beanName);
+  }
+
+  /**
+   * 根据需要包装Bean，如果Bean需要代理，则创建并返回代理对象
+   * @param bean bean对象
+   * @param beanName bean名称
+   * @return bean或者bean的代理对象
+   */
+  protected Object wrapIfNecessary(Object bean, String beanName) {
+    //避免死循环
+    if (isInfrastructureClass(bean.getClass())) {
+      return bean;
+    }
+
+    Collection<AspectJExpressionPointcutAdvisor> advisors = beanFactory.getBeansOfType(AspectJExpressionPointcutAdvisor.class).values();
+    try {
+      for (AspectJExpressionPointcutAdvisor advisor : advisors) {
+        ClassFilter classFilter = advisor.getPointcut().getClassFilter();
+        if (classFilter.matches(bean.getClass())) {
+          AdvisedSupport advisedSupport = new AdvisedSupport();
+          TargetSource targetSource = new TargetSource(bean);
+
+          advisedSupport.setTargetSource(targetSource);
+          advisedSupport.setMethodInterceptor((MethodInterceptor) advisor.getAdvice());
+          advisedSupport.setMethodMatcher(advisor.getPointcut().getMethodMatcher());
+
+          //返回代理对象
+          return new ProxyFactory(advisedSupport).getProxy();
+        }
+      }
+    } catch (Exception ex) {
+      throw new BeansException("Error create proxy bean for: " + beanName, ex);
+    }
+    return bean;
+  }
+	// 省略.
+}
+```
+
