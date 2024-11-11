@@ -3324,5 +3324,354 @@ public interface ConverterRegistry {
 
 
 
+## 类型转换二
+
+在 Spring 中，`FactoryBean` 用于创建特定类型的 Bean 实例。我们通过实现 `FactoryBean` 接口可以自定义 Bean 的创建过程，从而灵活地控制实例化逻辑、对象配置等。Spring 会将 `FactoryBean` 看作一个“工厂”，由它来决定生产的实际对象。
+
+```java
+public interface FactoryBean<T> {
+  T getObject() throws Exception;
+
+  Class<?> getObjectType();
+
+  boolean isSingleton();
+}
+```
+
+- `getObject()`: 返回 `FactoryBean` 创建的对象实例，即最终要注册到 Spring 容器的 Bean 实例。
+- `getObjectType()`: 返回 `FactoryBean` 创建的对象的类型。
+- `isSingleton()`: 指定创建的 Bean 是单例（singleton）还是多例（prototype）。
+
+
+
+### 类型转换器工厂Bean
+
+定义 `ConvertersFactoryBean` 类负责创建一个包含多个 `Converter` 实例的集合，将其注册到 Spring 的 `ConversionService` 中，从而实现应用中的自动类型转换。
+
+```java
+public class ConvertersFactoryBean implements FactoryBean<Set<?>> {
+  @Override
+  public Set<?> getObject() throws Exception {
+    HashSet<Object> converters = new HashSet<>();
+    StringToLocalDateConverter stringToLocalDateConverter =
+        new StringToLocalDateConverter("yyyy-MM-dd");
+    converters.add(stringToLocalDateConverter);
+    return converters;
+  }
+
+  @Override
+  public Class<?> getObjectType() {
+    return Set.class;
+  }
+
+  @Override
+  public boolean isSingleton() {
+    return true;
+  }
+}
+```
+
+### 类型转换接口工厂Bean
+
+`ConversionServiceFactoryBean` 的职责是创建并配置 `ConversionService`，并注册多个 Converter，这个注册操作是通过 `ConverterRegistry` 类完成，实际上是做一个缓存。
+
+```java
+public class ConversionServiceFactoryBean
+    implements FactoryBean<ConversionService>, InitializingBean {
+  private Set<?> converters;
+
+  private GenericConversionService conversionService;
+
+  @Override
+  public ConversionService getObject() throws Exception {
+    return conversionService;
+  }
+
+  @Override
+  public Class<?> getObjectType() {
+    return GenericConversionService.class;
+  }
+
+  @Override
+  public boolean isSingleton() {
+    return true;
+  }
+
+  @Override
+  public void afterPropertiesSet() throws Exception {
+    conversionService = new DefaultConversionService();
+    registerConverters(converters, conversionService);
+  }
+
+  /**
+   * 注册转换器列表
+   *
+   * @param converters 类型转换器列表
+   * @param registry 类型转换注册机
+   */
+  private void registerConverters(Set<?> converters, ConverterRegistry registry) {
+    if (converters != null) {
+      for (Object converter : converters) {
+        if (converter instanceof GenericConverter) {
+          registry.addConverter((GenericConverter) converter);
+        } else if (converter instanceof Converter<?, ?>) {
+          registry.addConverter((Converter<?, ?>) converter);
+        } else if (converter instanceof ConverterFactory<?, ?>) {
+          registry.addConverterFactory((ConverterFactory<?, ?>) converter);
+        } else {
+          throw new IllegalArgumentException(
+              "Each converter object must implement one of the "
+                  + "Converter, ConverterFactory, or GenericConverter interfaces");
+        }
+      }
+    }
+  }
+
+  public void setConverters(Set<?> converters) {
+    this.converters = converters;
+  }
+}
+```
+
+### 嵌入bean的生命周期
+
+在属性设置时和注解`@Value`注入属性信息时，都有可能存在通过类型转换的方式来处理。
+
+```java
+public class AutowiredAnnotationBeanPostProcessor
+    implements InstantiationAwareBeanPostProcessor, BeanFactoryAware {
+  // 省略...
+    public PropertyValues postProcessPropertyValues(PropertyValues pvs, Object bean, String beanName)
+      throws BeansException {
+    // 处理@Value注解
+    Class<?> clazz = bean.getClass();
+    clazz = ClassUtils.isCglibProxyClass(clazz) ? clazz.getSuperclass() : clazz;
+    Field[] declaredFields = clazz.getDeclaredFields();
+    for (Field field : declaredFields) {
+      Value valueAnnotation = field.getAnnotation(Value.class);
+      if (valueAnnotation != null) {
+        Object value = valueAnnotation.value();
+        value = beanFactory.resolveEmbeddedValue((String) value);
+
+        // 类型转换
+        Class<?> sourceType = value.getClass();
+        Class<?> targetType = (Class<?>) TypeUtil.getType(field);
+        ConversionService conversionService = beanFactory.getConversionService();
+        if (conversionService != null) {
+          if (conversionService.canConvert(sourceType, targetType)) {
+            value = conversionService.convert(value, targetType);
+          }
+        }
+
+        BeanUtil.setFieldValue(bean, field.getName(), value);
+      }
+    }
+
+    // 2. 处理注解 @Autowired
+    for (Field field : declaredFields) {
+      Autowired autowiredAnnotation = field.getAnnotation(Autowired.class);
+      if (null != autowiredAnnotation) {
+        Class<?> fieldType = field.getType();
+        String dependentBeanName = null;
+        Qualifier qualifierAnnotation = field.getAnnotation(Qualifier.class);
+        Object dependentBean = null;
+        if (null != qualifierAnnotation) {
+          dependentBeanName = qualifierAnnotation.value();
+          dependentBean = beanFactory.getBean(dependentBeanName, fieldType);
+        } else {
+          dependentBean = beanFactory.getBean(fieldType);
+        }
+        BeanUtil.setFieldValue(bean, field.getName(), dependentBean);
+      }
+    }
+
+    return pvs;
+  }
+  //省略...
+  
+}
+```
+
+
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
+    implements AutowireCapableBeanFactory {  
+private void applyPropertyValues(String beanName, Object bean, BeanDefinition beanDefinition) {
+  // 省略..
+    try {
+      PropertyValues propertyValues = beanDefinition.getPropertyValues();
+      for (PropertyValue propertyValue : propertyValues.getPropertyValues()) {
+
+        String name = propertyValue.getName();
+        Object value = propertyValue.getValue();
+
+        if (value instanceof BeanReference) {
+          // A 依赖 B，获取 B 的实例化
+          BeanReference beanReference = (BeanReference) value;
+          value = getBean(beanReference.getBeanName());
+        } else {
+          // 类型转换
+          Class<?> sourceType = value.getClass();
+          Class<?> targetType = (Class<?>) TypeUtil.getFieldType(bean.getClass(), name);
+          ConversionService conversionService = getConversionService();
+          if (conversionService != null) {
+            if (conversionService.canConvert(sourceType, targetType)) {
+              value = conversionService.convert(value, targetType);
+            }
+          }
+        }
+        // 属性填充
+        BeanUtil.setFieldValue(bean, name, value);
+      }
+    } catch (Exception e) {
+      throw new BeansException("Error setting property values：" + beanName);
+    }
+  }
+  // 省略...
+}
+```
+
+在使用之前会先获取注入的 ConversionService，而注入的动作是在**刷新容器 `refresh()`**的时候完成。
+
+```java
+public abstract class AbstractApplicationContext extends DefaultResourceLoader
+  implements ConfigurableApplicationContext {
+  public void refresh() throws BeansException {
+    // 1. 创建 BeanFactory，并加载 BeanDefinition
+    refreshBeanFactory();
+
+    // 2. 获取 BeanFactory
+    ConfigurableListableBeanFactory beanFactory = getBeanFactory();
+
+    // 3. 添加 ApplicationContextAwareProcessor，让继承自 ApplicationContextAware 的 Bean 对象都能感知所属的
+    // ApplicationContext
+    beanFactory.addBeanPostProcessor(new ApplicationContextAwareProcessor(this));
+
+    // 4. 在 Bean 实例化之前，执行 BeanFactoryPostProcessor (Invoke factory processors registered as beans in
+    // the context.)
+    invokeBeanFactoryPostProcessors(beanFactory);
+
+    // 5. BeanPostProcessor 需要提前于其他 Bean 对象实例化之前执行注册操作
+    registerBeanPostProcessors(beanFactory);
+
+    // 6. 初始化事件发布者
+    initApplicationEventMulticaster();
+
+    // 7. 注册事件监听器
+    registerListeners();
+
+    ++++++// 8. 设置类型转换器、提前实例化单例Bean对象
+    finishBeanFactoryInitialization(beanFactory);
+
+    // 9. 发布容器刷新完成事件
+    finishRefresh();
+  }
+  
+  protected void finishBeanFactoryInitialization(ConfigurableListableBeanFactory beanFactory) {
+    //设置类型转换器
+    if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME)) {
+      Object conversionService = beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME);
+      if (conversionService instanceof ConversionService) {
+        beanFactory.setConversionService((ConversionService) conversionService);
+      }
+    }
+    //提前实例化单例bean
+    beanFactory.preInstantiateSingletons();
+  }
+}
+```
+
+### 测试
+
+```java
+public class TypeConversionSecondPartTest {
+  @Test
+  public void test_conversionService() throws Exception{
+    ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext("classpath:spring-type-converter-second.xml");
+
+    Car car = applicationContext.getBean("car", Car.class);
+    assertThat(car.getPrice()).isEqualTo(1000000);
+    assertThat(car.getProduceDate()).isEqualTo(LocalDate.of(2021, 1, 1));
+  }
+}
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <bean id="car" class="org.springframework.test.bean.Car">
+        <property name="price" value="1000000"/>
+        <property name="produceDate" value="2021-01-01"/>
+    </bean>
+
+    <bean id="conversionService" class="org.springframework.beans.context.support.ConversionServiceFactoryBean">
+        <property name="converters" ref="converters"/>
+    </bean>
+    <bean id="converters" class="org.springframework.test.common.ConvertersFactoryBean"/>
+
+</beans>
+```
+
+```java
+public class ConvertersFactoryBean implements FactoryBean<Set<?>> {
+  @Override
+  public Set<?> getObject() throws Exception {
+    HashSet<Object> converters = new HashSet<>();
+    StringToLocalDateConverter stringToLocalDateConverter =
+        new StringToLocalDateConverter("yyyy-MM-dd");
+    converters.add(stringToLocalDateConverter);
+    return converters;
+  }
+
+  @Override
+  public Class<?> getObjectType() {
+    return Set.class;
+  }
+
+  @Override
+  public boolean isSingleton() {
+    return true;
+  }
+}
+
+public class StringToLocalDateConverter implements Converter<String, LocalDate> {
+  private final DateTimeFormatter DATE_TIME_FORMATTER;
+
+  public StringToLocalDateConverter(String pattern) {
+    DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern(pattern);
+  }
+
+  @Override
+  public LocalDate convert(String source) {
+    return LocalDate.parse(source, DATE_TIME_FORMATTER);
+  }
+}
+```
+
+```java
+@Component
+@Data
+@ToString
+public class Car {
+  @Value(value = "${brand}")
+  private String brand;
+
+  @Value(value = "${name}")
+  private String name;
+
+  private int price;
+
+  private LocalDate produceDate;
+}
+```
+
 
 

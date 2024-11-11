@@ -43,10 +43,19 @@ public interface BeanFactory {
 
   /**
    * 返回指定类型的bean对象
+   *
    * @param requiredType 类型
    * @return bean对象
    * @param <T> 泛型
    * @throws BeansException bean异常
    */
   <T> T getBean(Class<T> requiredType) throws BeansException;
+
+  /**
+   * 是否包含某个Bean名称
+   *
+   * @param name bean名称
+   * @return 结果
+   */
+  boolean containsBean(String name);
 }

@@ -2,6 +2,7 @@ package org.springframework.beans.factory.config;
 
 import org.springframework.beans.factory.HierarchicalBeanFactory;
 import org.springframework.beans.util.StringValueResolver;
+import org.springframework.core.convert.ConversionService;
 
 /**
  * 与Bean的作用域（Scope）、生命周期回调、依赖注入等相关的功能
@@ -39,4 +40,8 @@ public interface ConfigurableBeanFactory extends HierarchicalBeanFactory, Single
    * @since 3.0
    */
   String resolveEmbeddedValue(String value);
+
+  void setConversionService(ConversionService conversionService);
+
+  ConversionService getConversionService();
 }

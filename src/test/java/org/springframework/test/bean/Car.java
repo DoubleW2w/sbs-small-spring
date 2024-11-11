@@ -5,6 +5,8 @@ import lombok.ToString;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
+
 /**
  * @author: DoubleW2w
  * @date: 2024/11/10
@@ -19,4 +21,8 @@ public class Car {
 
   @Value(value = "${name}")
   private String name;
+
+  private int price;
+
+  private LocalDate produceDate;
 }

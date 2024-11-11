@@ -2,6 +2,7 @@ package org.springframework.beans.factory.support;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.util.TypeUtil;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.beans.BeansException;
@@ -9,6 +10,7 @@ import org.springframework.beans.PropertyValue;
 import org.springframework.beans.PropertyValues;
 import org.springframework.beans.factory.*;
 import org.springframework.beans.factory.config.*;
+import org.springframework.core.convert.ConversionService;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -23,7 +25,7 @@ import java.lang.reflect.Method;
 public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
     implements AutowireCapableBeanFactory {
   @Setter @Getter
-  private InstantiationStrategy instantiationStrategy = new CglibSubclassingInstantiationStrategy();
+  private InstantiationStrategy instantiationStrategy = new SimpleInstantiationStrategy();
 
   @Override
   protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
@@ -209,6 +211,16 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
           // A 依赖 B，获取 B 的实例化
           BeanReference beanReference = (BeanReference) value;
           value = getBean(beanReference.getBeanName());
+        } else {
+          // 类型转换
+          Class<?> sourceType = value.getClass();
+          Class<?> targetType = (Class<?>) TypeUtil.getFieldType(bean.getClass(), name);
+          ConversionService conversionService = getConversionService();
+          if (conversionService != null) {
+            if (conversionService.canConvert(sourceType, targetType)) {
+              value = conversionService.convert(value, targetType);
+            }
+          }
         }
         // 属性填充
         BeanUtil.setFieldValue(bean, name, value);
