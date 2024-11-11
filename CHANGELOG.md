@@ -2765,7 +2765,7 @@ public class AutowiredAnnotationBeanPostProcessor
 }
 ```
 
-而上面的步骤，要放在bean的生命管理周期中
+而上面的步骤，要放在 bean 的生命管理周期中
 
 ```java
 public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
@@ -2854,7 +2854,7 @@ public class AnnotationInjectPropertiesTest {
 
 
 
-### A2-Autowired注解
+### A2-Autowired 注解
 
 在 `AutowiredAnnotationBeanPostProcessor` 类补充对 autowired 注解的解析。
 
@@ -2948,13 +2948,13 @@ public class Person {
 
 ## 给代理对象设置属性
 
-> 代码分支:[properties-setter-proxy-object](https://github.com/DoubleW2w/sbs-small-spring/tree/properties-setter-proxy-object)
+> 代码分支: [properties-setter-proxy-object](https://github.com/DoubleW2w/sbs-small-spring/tree/properties-setter-proxy-object)
 
-本章节要实现的是**给代理对象中的属性填充相对应的值**。
+本章节要实现的是 **给代理对象中的属性填充相对应的值**。
 
 之前的情况是在 `DefaultAdvisorAutoProxyCreator#postProcessBeforeInstantiation()` 完成代理对象的创建。
 
-根据下面的流程来看，在 `resolveBeforeInstantiation()` 方法中会去调用 `applyBeanPostProcessorsBeforeInstantiation()`，最终会走 `InstantiationAwareBeanPostProcessor#postProcessBeforeInstantiation()`，而该方法如果返回非null，会导致"短路"，不会执行后面的设置属性逻辑。因此如果该方法中返回代理bean后，不会为代理bean设置属性。
+根据下面的流程来看，在 `resolveBeforeInstantiation()` 方法中会去调用 `applyBeanPostProcessorsBeforeInstantiation()`，最终会走 `InstantiationAwareBeanPostProcessor#postProcessBeforeInstantiation()`，而该方法如果返回非 null，会导致 "短路"，不会执行后面的设置属性逻辑。因此如果该方法中返回代理 bean 后，不会为代理 bean 设置属性。
 
 ```java
 public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory implements AutowireCapableBeanFactory {
@@ -3010,9 +3010,9 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 }
 ```
 
-所以**需要把创建代理对象的逻辑迁移到 Bean 对象执行初始化方法之后，在执行代理对象的创建。**
+所以 **需要把创建代理对象的逻辑迁移到 Bean 对象执行初始化方法之后，在执行代理对象的创建。**
 
-也就是把`DefaultAdvisorAutoProxyCreator#postProcessBeforeInstantiation`的内容迁移到`DefaultAdvisorAutoProxyCreator#postProcessAfterInitialization`中。
+也就是把 `DefaultAdvisorAutoProxyCreator#postProcessBeforeInstantiation` 的内容迁移到 `DefaultAdvisorAutoProxyCreator#postProcessAfterInitialization` 中。
 
 ```java
 public class TargetSource {
@@ -3202,3 +3202,127 @@ public class LoveUServiceImpl implements LoveUService {
 <img src="https://doublew2w-note-resource.oss-cn-hangzhou.aliyuncs.com/img/202411110053079.png"/>
 
 <p style="text-align:center"> <a href="https://github.com/DerekYRC/mini-spring/blob/main/changelog.md#"> 图片来自：mini-spring </a> </p>
+
+
+
+## 类型转换 1
+
+> 代码分支: [type-converter-first](https://github.com/DoubleW2w/sbs-small-spring/tree/type-converter-first)
+
+在 Spring 中为了简化和增强不同数据类型的处理，引入了 **类型转换机制**。比如我们在 Web 应用中请求参数的转换，比如 `String` 转换为 `Date`、`Enum` 类型，还比如我们在服务层中，业务逻辑中的数据类型处理。
+
+### Converter 接口
+
+`Converter` 接口定义了一个单一方法 `convert`，用于将源类型 `S` 转换为目标类型 `T`。
+
+```java
+public interface Converter<S, T> {
+  /** 类型转换 */
+  T convert(S source);
+}
+```
+
+### ConversionService 接口
+
+`ConversionService` 接口是 Spring 类型转换的核心服务接口，用于注册和管理多种 `Converter`，并执行类型转换。
+
+```java
+public interface ConversionService {
+  boolean canConvert(Class<?> sourceType, Class<?> targetType);
+
+  <T> T convert(Object source, Class<T> targetType);
+}
+```
+
+Spring 还提供了默认实现 `DefaultConversionService` 和 `GenericConversionService` 支持大量内置的转换器并允许添加自定义转换器。
+
+```java
+public class DefaultConversionService extends GenericConversionService {
+  public DefaultConversionService() {
+    addDefaultConverters(this);
+  }
+
+  public static void addDefaultConverters(ConverterRegistry converterRegistry) {
+    converterRegistry.addConverterFactory(new StringToNumberConverterFactory());
+    // TODO 添加其他ConverterFactory
+  }
+}
+```
+
+```java
+public class GenericConversionService implements ConversionService, ConverterRegistry {
+
+  private Map<ConvertiblePair, GenericConverter> converters = new HashMap<>();
+
+  @Override
+  public boolean canConvert(Class<?> sourceType, Class<?> targetType) {
+    GenericConverter converter = getConverter(sourceType, targetType);
+    return converter != null;
+  }
+
+  @Override
+  public <T> T convert(Object source, Class<T> targetType) {
+    Class<?> sourceType = source.getClass();
+    GenericConverter converter = getConverter(sourceType, targetType);
+    return (T) converter.convert(source, sourceType, targetType);
+  }
+
+  @Override
+  public void addConverter(Converter<?, ?> converter) {
+    ConvertiblePair typeInfo = getRequiredTypeInfo(converter);
+    ConverterAdapter converterAdapter = new ConverterAdapter(typeInfo, converter);
+    for (ConvertiblePair convertibleType : converterAdapter.getConvertibleTypes()) {
+      converters.put(convertibleType, converterAdapter);
+    }
+  }
+
+  @Override
+  public void addConverterFactory(ConverterFactory<?, ?> converterFactory) {
+    ConvertiblePair typeInfo = getRequiredTypeInfo(converterFactory);
+    ConverterFactoryAdapter converterFactoryAdapter =
+        new ConverterFactoryAdapter(typeInfo, converterFactory);
+    for (ConvertiblePair convertibleType : converterFactoryAdapter.getConvertibleTypes()) {
+      converters.put(convertibleType, converterFactoryAdapter);
+    }
+  }
+
+  @Override
+  public void addConverter(GenericConverter converter) {
+    for (ConvertiblePair convertibleType : converter.getConvertibleTypes()) {
+      converters.put(convertibleType, converter);
+    }
+  }
+  // 省略....
+}
+```
+
+### ConverterFactory 和 ConverterRegistery
+
+`ConverterFactory` 接口负责来获取到对应的 `Converter` 类型，
+
+```java
+public interface ConverterFactory<S, R> {
+  <T extends R> Converter<S, T> getConverter(Class<T> targetType);
+}
+```
+
+`ConverterRegistry` 接口负责提供注册的能力
+
+```java
+public interface ConverterRegistry {
+  void addConverter(Converter<?, ?> converter);
+
+  void addConverterFactory(ConverterFactory<?, ?> converterFactory);
+
+  void addConverter(GenericConverter converter);
+}
+```
+
+`Converter<S,T>` 接口适合一对一的类型转换，如果要将 String 类型转换为 Ineger/Long/Float/Double/Decimal 等类型，就要实现一系列的 StringToInteger/StringToLongConverter/StringToFloatConverter 转换器，非常不优雅。
+
+`ConverterFactory` 接口则适合一对多的类型转换，可以将一种类型转换为另一种类型及其子类。比如将 String 类型转换为 Ineger/Long/Float/Double/Decimal 等 Number 类型时，只需定义一个 ConverterFactory 转换器：
+
+
+
+
+
