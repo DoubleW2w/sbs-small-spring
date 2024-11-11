@@ -69,7 +69,6 @@ public class DefaultAdvisorAutoProxyCreator
       advisedSupport.setTargetSource(targetSource);
       advisedSupport.setMethodInterceptor((MethodInterceptor) advisor.getAdvice());
       advisedSupport.setMethodMatcher(advisor.getPointcut().getMethodMatcher());
-      advisedSupport.setProxyTargetClass(false);
 
       // 返回代理对象
       return new ProxyFactory(advisedSupport).getProxy();

@@ -16,7 +16,7 @@ public class PropertiesSetterProxyObjectTest {
   public void testPopulateProxyBeanWithPropertyValues() throws Exception {
     ClassPathXmlApplicationContext applicationContext =
         new ClassPathXmlApplicationContext(
-            "classpath:properties-setter-proxy-object-1.xml");
+            "classpath:spring-properties-setter-proxy-object-1.xml");
 
     // 获取代理对象
     LoveUService loveUService = (LoveUService) applicationContext.getBean("loveUService", LoveUService.class);

@@ -30,7 +30,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
   @Override
   protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
       throws BeansException {
-    Object bean = null;
+    Object bean;
     try {
       // 判断是否返回代理 Bean 对象
       bean = resolveBeforeInstantiation(beanName, beanDefinition);
@@ -39,6 +39,11 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
       }
       // 实例化 Bean
       bean = createBeanInstance(beanDefinition, beanName, args);
+      // 为解决循环依赖问题，将实例化后的bean放进缓存中提前暴露
+      //为解决循环依赖问题，将实例化后的bean放进缓存中提前暴露
+      if (beanDefinition.isSingleton()) {
+        earlySingletonObjects.put(beanName, bean);
+      }
       // 实例化后判断
       boolean continueWithPropertyPopulation =
           applyBeanPostProcessorsAfterInstantiation(beanName, bean);

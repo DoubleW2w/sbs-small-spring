@@ -3344,7 +3344,7 @@ public interface FactoryBean<T> {
 
 
 
-### 类型转换器工厂Bean
+### 类型转换器工厂 Bean
 
 定义 `ConvertersFactoryBean` 类负责创建一个包含多个 `Converter` 实例的集合，将其注册到 Spring 的 `ConversionService` 中，从而实现应用中的自动类型转换。
 
@@ -3371,7 +3371,7 @@ public class ConvertersFactoryBean implements FactoryBean<Set<?>> {
 }
 ```
 
-### 类型转换接口工厂Bean
+### 类型转换接口工厂 Bean
 
 `ConversionServiceFactoryBean` 的职责是创建并配置 `ConversionService`，并注册多个 Converter，这个注册操作是通过 `ConverterRegistry` 类完成，实际上是做一个缓存。
 
@@ -3433,9 +3433,9 @@ public class ConversionServiceFactoryBean
 }
 ```
 
-### 嵌入bean的生命周期
+### 嵌入 bean 的生命周期
 
-在属性设置时和注解`@Value`注入属性信息时，都有可能存在通过类型转换的方式来处理。
+在属性设置时和注解 `@Value` 注入属性信息时，都有可能存在通过类型转换的方式来处理。
 
 ```java
 public class AutowiredAnnotationBeanPostProcessor
@@ -3532,7 +3532,7 @@ private void applyPropertyValues(String beanName, Object bean, BeanDefinition be
 }
 ```
 
-在使用之前会先获取注入的 ConversionService，而注入的动作是在**刷新容器 `refresh()`**的时候完成。
+在使用之前会先获取注入的 ConversionService，而注入的动作是在 **刷新容器 `refresh()`** 的时候完成。
 
 ```java
 public abstract class AbstractApplicationContext extends DefaultResourceLoader
@@ -3674,4 +3674,240 @@ public class Car {
 ```
 
 
+
+## 循环依赖
+
+### 问题理解
+
+循环依赖指的是两个或多个 Bean 互相依赖的情况，比如 `Bean A` 依赖 `Bean B`，而 `Bean B` 又依赖 `Bean A`。当实例化 BeanA 的时候，发现依赖 BeanB，紧接着去实例化 BeanB，又发现 BeanB 依赖 BeanA，这个时候循环依赖就出现了。
+
+在现有的流程中，bean 实例化后，并且在设置属性后被放进 singletonObjects 缓存中。如果调整为，当 bean 实例化后就放进 singletonObjects 单例缓存中，提前暴露引用，然后再设置属性，就能解决上面的循环依赖问题，执行流程变为：
+
+1. getBean(a)，检查 singletonObjects 是否包含 a，singletonObjects 不包含 a，实例化 A 放进 singletonObjects，设置属性 b，发现依赖 B，尝试 getBean(b)
+
+2. getBean(b)，检查 singletonObjects 是否包含 b，singletonObjects 不包含 b，实例化 B 放进 singletonObjects，设置属性 a，发现依赖 A，尝试 getBean(a)
+
+3. getBean(a)，检查 singletonObjects 是否包含 a，singletonObjects 包含 a，返回 a
+4. 2 中的 b 拿到 a，设置属性 a，然后返回 b。1 中的 a 拿到 b，设置属性 b，返回 a。
+
+所以其实一级缓存就可以解决这个循环依赖问题，那么 Spring 为什么要使用三级缓存？
+
+- 只有一级缓存，在处理流程上会使用的有限。
+- 那么增加一级缓存（即 **成品对象 `singletonObjects`** 和 **半成品对象 `earlySingletonObjects`**），处理起来也更加优雅、简单、易扩展。
+- 但只有二级缓存没法解决有代理对象时的循环依赖，二级缓存 `earlySingletonObjects` 中的 bean 是实例化后的 bean，而放进一级缓存 `singletonObjects` 中的 bean 是代理对象，两个缓存中的 bean 不一致。如果 beanA 被代理，那么 beanB 拿到的 a 属性是实例化后的 beanA，而 beanA 是被代理的对象，所以有 `b.getA() !=a`
+
+### 代码
+
+```java
+public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFactory
+    implements AutowireCapableBeanFactory {  
+@Override
+  protected Object createBean(String beanName, BeanDefinition beanDefinition, Object[] args)
+      throws BeansException {
+    Object bean = null;
+    Object bean;
+    try {
+      // 判断是否返回代理 Bean 对象
+      bean = resolveBeforeInstantiation(beanName, beanDefinition);
+      if (null != bean) {
+        return bean;
+      }
+      // 实例化 Bean
+      bean = createBeanInstance(beanDefinition, beanName, args);
+     
+      //为解决循环依赖问题，将实例化后的bean放进缓存中提前暴露
+      if (beanDefinition.isSingleton()) {
+        earlySingletonObjects.put(beanName, bean);
+      }
+      
+      // 实例化后判断
+      boolean continueWithPropertyPopulation =
+          applyBeanPostProcessorsAfterInstantiation(beanName, bean);
+      if (!continueWithPropertyPopulation) {
+        return bean;
+      }
+      // 在设置 Bean 属性之前，允许 BeanPostProcessor 修改属性值
+      applyBeanPostProcessorsBeforeApplyingPropertyValues(beanName, bean, beanDefinition);
+      // 给 Bean 填充属性
+      applyPropertyValues(beanName, bean, beanDefinition);
+      // 执行 Bean 的初始化方法和 BeanPostProcessor 的前置和后置处理方法
+      bean = initializeBean(beanName, bean, beanDefinition);
+    } catch (Exception e) {
+      throw new BeansException("Instantiation of bean failed", e);
+    }
+
+    // 注册实现了 DisposableBean 接口的 Bean 对象
+    registerDisposableBeanIfNecessary(beanName, bean, beanDefinition);
+
+    // 判断 SCOPE_SINGLETON、SCOPE_PROTOTYPE
+    if (beanDefinition.isSingleton()) {
+      registerSingleton(beanName, bean);
+    }
+    return bean;
+  }
+}
+```
+
+```java
+public class DefaultSingletonBeanRegistry implements SingletonBeanRegistry {
+protected Map<String, Object> earlySingletonObjects = new HashMap<>();
+  
+  
+  @Override
+  public Object getSingleton(String beanName) {
+    return singletonObjects.get(beanName);
+    Object bean = singletonObjects.get(beanName);
+    if (bean == null) {
+      bean = earlySingletonObjects.get(beanName);
+    }
+    return bean;
+  }
+  // 省略
+}
+```
+
+
+
+### 测试类
+
+```java
+@Data
+public class A {
+  private B b;
+}
+
+@Data
+public class B {
+  private A a;
+}
+```
+
+```java
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+
+    <bean id="a" class="org.springframework.test.bean.A">
+        <property name="b" ref="b"/>
+    </bean>
+
+    <bean id="b" class="org.springframework.test.bean.B">
+        <property name="a" ref="a"/>
+    </bean>
+
+</beans>
+```
+
+```java
+public class CircularReferenceTest {
+  @Test
+  public void testCircularReference() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-circular-reference-1.xml");
+    A a = applicationContext.getBean("a", A.class);
+    B b = applicationContext.getBean("b", B.class);
+    assertThat(a.getB() == b).isTrue();
+  }
+}
+```
+
+### 不能解决有代理对象时的循环依赖
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+    <bean id="b" class="org.springframework.test.bean.B">
+        <property name="a" ref="a"/>
+    </bean>
+
+    <!-- a被代理 -->
+    <bean id="a" class="org.springframework.test.bean.A">
+        <property name="b" ref="b"/>
+    </bean>
+
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/>
+    <bean id="beforeAdvice" class="org.springframework.test.common.ABeforeAdvice"/>
+
+    <bean id="methodInterceptor" class="org.springframework.aop.GenericInterceptor">
+        <property name="beforeAdvice" ref="beforeAdvice"/>
+    </bean>
+    <bean id="pointcutAdvisor"
+          class="org.springframework.aop.aspectj.AspectJExpressionPointcutAdvisor">
+        <property name="expression" value="execution(* org.springframework.test.bean.A.func(..))"/>
+        <property name="advice" ref="methodInterceptor"/>
+    </bean>
+
+</beans>
+```
+
+```java
+@Data
+public class A {
+  private B b;
+  public void func(){}
+}
+
+public class B {
+  private A a;
+
+}
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+	         http://www.springframework.org/schema/beans/spring-beans.xsd
+		 http://www.springframework.org/schema/context
+		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+    <bean id="b" class="org.springframework.test.bean.B">
+        <property name="a" ref="a"/>
+    </bean>
+
+    <!-- a被代理 -->
+    <bean id="a" class="org.springframework.test.bean.A">
+        <property name="b" ref="b"/>
+    </bean>
+
+    <bean class="org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator"/>
+    <bean id="beforeAdvice" class="org.springframework.test.common.ABeforeAdvice"/>
+
+    <bean id="methodInterceptor" class="org.springframework.aop.GenericInterceptor">
+        <property name="beforeAdvice" ref="beforeAdvice"/>
+    </bean>
+    <bean id="pointcutAdvisor"
+          class="org.springframework.aop.aspectj.AspectJExpressionPointcutAdvisor">
+        <property name="expression" value="execution(* org.springframework.test.bean.A.func(..))"/>
+        <property name="advice" ref="methodInterceptor"/>
+    </bean>
+
+</beans>
+```
+
+```java
+  @Test
+  public void test_circularReferenceWithProxyNotThirdCache() throws Exception {
+    ClassPathXmlApplicationContext applicationContext =
+        new ClassPathXmlApplicationContext("classpath:spring-circular-reference-2.xml");
+    A a = applicationContext.getBean("a", A.class);
+    B b = applicationContext.getBean("b", B.class);
+
+    // 增加二级缓存不能解决有代理对象时的循环依赖。
+    // a被代理，放进二级缓存earlySingletonObjects中的是实例化后的A，而放进一级缓存singletonObjects中的是被代理后的A，实例化b时从earlySingletonObjects获取a，所以b.getA() != a
+    assertThat(b.getA() != a).isTrue();
+  }
+```
 
