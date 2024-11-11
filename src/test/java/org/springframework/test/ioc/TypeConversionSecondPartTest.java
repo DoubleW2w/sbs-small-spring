@@ -1,7 +1,7 @@
 package org.springframework.test.ioc;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.context.support.ClassPathXmlApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.test.bean.Car;
 
 import java.time.LocalDate;

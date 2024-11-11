@@ -3,11 +3,11 @@ package org.springframework.beans.factory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.PropertyValue;
 import org.springframework.beans.PropertyValues;
-import org.springframework.beans.core.io.DefaultResourceLoader;
-import org.springframework.beans.core.io.Resource;
+import org.springframework.core.io.DefaultResourceLoader;
+import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
-import org.springframework.beans.util.StringValueResolver;
+import org.springframework.util.StringValueResolver;
 
 import java.util.Properties;
 

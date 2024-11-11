@@ -1,6 +1,6 @@
 package org.springframework.aop;
 
-import org.springframework.beans.util.ClassUtils;
+import org.springframework.util.ClassUtils;
 
 /**
  * 被代理的目标对象

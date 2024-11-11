@@ -1,8 +1,8 @@
 package org.springframework.beans.factory.support;
 
 import org.springframework.beans.BeansException;
-import org.springframework.beans.core.io.Resource;
-import org.springframework.beans.core.io.ResourceLoader;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.ResourceLoader;
 
 /**
  * Bean 定义输入流： 获取Bean定义注册信息、加载Bean定义

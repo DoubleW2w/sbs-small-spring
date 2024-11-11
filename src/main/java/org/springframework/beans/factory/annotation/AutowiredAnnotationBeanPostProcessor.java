@@ -8,7 +8,7 @@ import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
-import org.springframework.beans.util.ClassUtils;
+import org.springframework.util.ClassUtils;
 import org.springframework.core.convert.ConversionService;
 
 import java.lang.reflect.Field;

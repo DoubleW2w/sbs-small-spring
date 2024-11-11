@@ -4,7 +4,7 @@ import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
 import org.springframework.aop.AdvisedSupport;
-import org.springframework.beans.util.ClassUtils;
+import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.Method;
 

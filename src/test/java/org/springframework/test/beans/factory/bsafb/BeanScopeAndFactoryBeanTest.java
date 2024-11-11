@@ -2,7 +2,7 @@ package org.springframework.test.beans.factory.bsafb;
 
 import org.junit.jupiter.api.Test;
 import org.openjdk.jol.info.ClassLayout;
-import org.springframework.beans.context.support.ClassPathXmlApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
  * @author: DoubleW2w

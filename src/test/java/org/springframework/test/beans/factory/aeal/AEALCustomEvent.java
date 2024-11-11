@@ -2,7 +2,7 @@ package org.springframework.test.beans.factory.aeal;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.springframework.beans.context.event.ApplicationContextEvent;
+import org.springframework.context.event.ApplicationContextEvent;
 
 /**
  * AEAL是分支名称 application-event-and-listener 的首字母拼写

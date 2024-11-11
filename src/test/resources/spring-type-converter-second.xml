@@ -12,7 +12,7 @@
         <property name="produceDate" value="2021-01-01"/>
     </bean>
 
-    <bean id="conversionService" class="org.springframework.beans.context.support.ConversionServiceFactoryBean">
+    <bean id="conversionService" class="org.springframework.context.support.ConversionServiceFactoryBean">
         <property name="converters" ref="converters"/>
     </bean>
     <bean id="converters" class="org.springframework.test.common.ConvertersFactoryBean"/>

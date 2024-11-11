@@ -1,7 +1,7 @@
 package org.springframework.test.beans.factory.aeal;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.context.support.ClassPathXmlApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
  * @author: DoubleW2w

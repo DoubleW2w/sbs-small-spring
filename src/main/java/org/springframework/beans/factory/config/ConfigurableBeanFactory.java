@@ -1,7 +1,7 @@
 package org.springframework.beans.factory.config;
 
 import org.springframework.beans.factory.HierarchicalBeanFactory;
-import org.springframework.beans.util.StringValueResolver;
+import org.springframework.util.StringValueResolver;
 import org.springframework.core.convert.ConversionService;
 
 /**

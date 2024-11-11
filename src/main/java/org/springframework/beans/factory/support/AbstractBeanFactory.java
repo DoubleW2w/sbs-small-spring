@@ -7,8 +7,8 @@ import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.beans.util.ClassUtils;
-import org.springframework.beans.util.StringValueResolver;
+import org.springframework.util.ClassUtils;
+import org.springframework.util.StringValueResolver;
 import org.springframework.core.convert.ConversionService;
 
 /**

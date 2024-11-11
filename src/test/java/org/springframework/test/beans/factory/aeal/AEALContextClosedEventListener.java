@@ -1,7 +1,7 @@
 package org.springframework.test.beans.factory.aeal;
 
-import org.springframework.beans.context.ApplicationListener;
-import org.springframework.beans.context.event.ContextClosedEvent;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextClosedEvent;
 
 /**
  * @author: DoubleW2w

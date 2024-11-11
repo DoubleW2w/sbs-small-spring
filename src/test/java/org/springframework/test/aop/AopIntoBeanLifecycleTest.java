@@ -1,11 +1,8 @@
 package org.springframework.test.aop;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.context.support.ClassPathXmlApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.test.service.LoveUService;
-import org.springframework.test.service.WorldService;
-
-import java.util.Arrays;
 
 /**
  * @author: DoubleW2w

@@ -3607,15 +3607,16 @@ public class TypeConversionSecondPartTest {
 		 http://www.springframework.org/schema/context
 		 http://www.springframework.org/schema/context/spring-context-4.0.xsd">
 
-    <bean id="car" class="org.springframework.test.bean.Car">
-        <property name="price" value="1000000"/>
-        <property name="produceDate" value="2021-01-01"/>
-    </bean>
+  <bean id="car" class="org.springframework.test.bean.Car">
+    <property name="price" value="1000000"/>
+    <property name="produceDate" value="2021-01-01"/>
+  </bean>
 
-    <bean id="conversionService" class="org.springframework.beans.context.support.ConversionServiceFactoryBean">
-        <property name="converters" ref="converters"/>
-    </bean>
-    <bean id="converters" class="org.springframework.test.common.ConvertersFactoryBean"/>
+  <bean id="conversionService"
+        class="org.springframework.context.support.ConversionServiceFactoryBean">
+    <property name="converters" ref="converters"/>
+  </bean>
+  <bean id="converters" class="org.springframework.test.common.ConvertersFactoryBean"/>
 
 </beans>
 ```
@@ -3911,3 +3912,6 @@ public class B {
   }
 ```
 
+### 解决有代理对象的循环依赖问题
+
+解决有代理对象时的循环依赖问题，需要提前暴露代理对象的引用，而不是暴露实例化后的bean的引用，这样才能避免一个拿出来是代理对象，另一个拿出来是实例化好的对象。

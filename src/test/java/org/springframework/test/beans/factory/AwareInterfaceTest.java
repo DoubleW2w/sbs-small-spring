@@ -1,7 +1,7 @@
 package org.springframework.test.beans.factory;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.context.support.ClassPathXmlApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.test.service.HelloWorldService;
 
 import static org.assertj.core.api.Assertions.assertThat;
